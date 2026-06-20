@@ -1,0 +1,18 @@
+[package]
+name = "family-medicine-box"
+version = "1.0.0"
+description = "家庭药品收纳与有效期提醒桌面工具"
+authors = ["you"]
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "1.5", features = [] }
+
+[dependencies]
+tauri = { version = "1.5", features = ["dialog-all", "fs-all", "path-all", "notification-all", "shell-all", "window-all", "system-tray"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
