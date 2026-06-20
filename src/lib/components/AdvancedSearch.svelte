@@ -1,3 +1,5 @@
+<svelte:options accessors={true} />
+
 <script>
   import Icon from './Icon.svelte'
   import { familyMembers } from '../stores/familyMembers.js'

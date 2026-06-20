@@ -5,11 +5,14 @@
   export let size = 20
   export let color = 'currentColor'
   export let strokeWidth = 2
+  let className = ''
+  export { className as class }
 
   $: path = Icons[name] || ''
 </script>
 
 <svg
+  class={className}
   width={size}
   height={size}
   viewBox="0 0 24 24"
