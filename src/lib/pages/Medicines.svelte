@@ -37,8 +37,12 @@
   let showBatchModal = false
   let showDetailModal = false
   let showScanModal = false
+  let showDeleteConfirm = false
   let editingMedicine = null
-  let selectedMedicine = null
+  let selectedMedicineId = null
+  let deletingMedicineId = null
+
+  $: selectedMedicine = $medicines.find((m) => m.id === selectedMedicineId) || null
 
   let form = getDefaultForm()
   let batchRows = [getDefaultForm()]
@@ -114,8 +118,27 @@
   }
 
   function openDetail(medicine) {
-    selectedMedicine = medicine
+    selectedMedicineId = medicine.id
     showDetailModal = true
+  }
+
+  function requestDelete(id) {
+    deletingMedicineId = id
+    showDeleteConfirm = true
+  }
+
+  function confirmDelete() {
+    if (deletingMedicineId) {
+      deleteMedicine(deletingMedicineId)
+      showDetailModal = false
+      showDeleteConfirm = false
+      deletingMedicineId = null
+    }
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false
+    deletingMedicineId = null
   }
 
   function handleSubmit() {
@@ -129,13 +152,6 @@
       addMedicine(form)
     }
     showFormModal = false
-  }
-
-  function handleDelete(id) {
-    if (confirm('确定要删除此药品吗？')) {
-      deleteMedicine(id)
-      showDetailModal = false
-    }
   }
 
   function addBatchRow() {
@@ -237,16 +253,15 @@
 
     <div class="flex flex-wrap items-center gap-3">
       <div class="relative flex-1 min-w-[200px]">
-        <Icon name="search" size={16} color="#9CA3AF" />
+        <div class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+          <Icon name="search" size={16} color="#9CA3AF" />
+        </div>
         <input
           type="text"
           class="input-base pl-9"
           placeholder="搜索药品名称、厂家、条形码..."
           bind:value={searchQuery}
         />
-        <div class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          <Icon name="search" size={16} color="#9CA3AF" />
-        </div>
       </div>
       <select class="input-base w-auto" bind:value={filterCategory}>
         <option value="all">全部分类</option>
@@ -648,7 +663,7 @@
     </div>
   {/if}
   <div slot="footer">
-    <button class="btn-danger" on:click={() => handleDelete(selectedMedicine.id)}>
+    <button class="btn-danger" on:click={() => requestDelete(selectedMedicine.id)}>
       <Icon name="trash" size={16} />
       <span class="ml-1">删除</span>
     </button>
@@ -687,5 +702,23 @@
   <div slot="footer">
     <button class="btn-ghost" on:click={stopScanner}>取消</button>
     <button class="btn-primary" on:click={applyScannedBarcode} disabled={!scannedBarcode}>确认使用</button>
+  </div>
+</Modal>
+
+<Modal show={showDeleteConfirm} title="确认删除" width="400px" on:close={cancelDelete}>
+  <div class="py-4">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+        <Icon name="alert" size={20} color="#EF4444" />
+      </div>
+      <div>
+        <p class="font-medium text-medical-text-primary">确定要删除此药品吗？</p>
+        <p class="text-sm text-medical-text-secondary mt-1">删除后将无法恢复，相关用药记录不会被删除。</p>
+      </div>
+    </div>
+  </div>
+  <div slot="footer">
+    <button class="btn-ghost" on:click={cancelDelete}>取消</button>
+    <button class="btn-danger" on:click={confirmDelete}>确认删除</button>
   </div>
 </Modal>

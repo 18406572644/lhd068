@@ -15,7 +15,9 @@
   const RELATIONS = ['本人', '配偶', '子女', '父母', '祖父母', '其他亲属']
 
   let showFormModal = false
+  let showDeleteConfirm = false
   let editingMember = null
+  let deletingMemberId = null
 
   let form = {
     name: '',
@@ -60,10 +62,22 @@
     showFormModal = false
   }
 
-  function handleDelete(id) {
-    if (confirm('确定删除此成员吗？相关药品关联将被移除。')) {
-      deleteMember(id)
+  function requestDelete(id) {
+    deletingMemberId = id
+    showDeleteConfirm = true
+  }
+
+  function confirmDelete() {
+    if (deletingMemberId) {
+      deleteMember(deletingMemberId)
+      showDeleteConfirm = false
+      deletingMemberId = null
     }
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false
+    deletingMemberId = null
   }
 
   function getMedicinesCount(memberId) {
@@ -122,7 +136,7 @@
                     <button class="w-8 h-8 rounded-lg text-medical-text-secondary hover:bg-medical-blue-50 hover:text-medical-blue-500 transition-all" on:click={() => openEditForm(member)}>
                       <Icon name="edit" size={16} />
                     </button>
-                    <button class="w-8 h-8 rounded-lg text-medical-text-secondary hover:bg-red-50 hover:text-medical-danger transition-all" on:click={() => handleDelete(member.id)}>
+                    <button class="w-8 h-8 rounded-lg text-medical-text-secondary hover:bg-red-50 hover:text-medical-danger transition-all" on:click={() => requestDelete(member.id)}>
                       <Icon name="trash" size={16} />
                     </button>
                   </div>
@@ -203,5 +217,23 @@
   <div slot="footer">
     <button class="btn-ghost" on:click={() => showFormModal = false}>取消</button>
     <button class="btn-primary" on:click={handleSubmit}>{editingMember ? '保存修改' : '添加成员'}</button>
+  </div>
+</Modal>
+
+<Modal show={showDeleteConfirm} title="确认删除" width="400px" on:close={cancelDelete}>
+  <div class="py-4">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+        <Icon name="alert" size={20} color="#EF4444" />
+      </div>
+      <div>
+        <p class="font-medium text-medical-text-primary">确定要删除此成员吗？</p>
+        <p class="text-sm text-medical-text-secondary mt-1">删除后将无法恢复，相关药品关联将被移除。</p>
+      </div>
+    </div>
+  </div>
+  <div slot="footer">
+    <button class="btn-ghost" on:click={cancelDelete}>取消</button>
+    <button class="btn-danger" on:click={confirmDelete}>确认删除</button>
   </div>
 </Modal>

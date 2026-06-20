@@ -15,7 +15,9 @@
   let filterMember = 'all'
   let filterMedicine = 'all'
   let showFormModal = false
+  let showDeleteConfirm = false
   let editingRecord = null
+  let deletingRecordId = null
 
   let form = {
     medicineId: '',
@@ -89,10 +91,22 @@
     showFormModal = false
   }
 
-  function handleDelete(id) {
-    if (confirm('确定删除此记录吗？')) {
-      deleteRecord(id)
+  function requestDelete(id) {
+    deletingRecordId = id
+    showDeleteConfirm = true
+  }
+
+  function confirmDelete() {
+    if (deletingRecordId) {
+      deleteRecord(deletingRecordId)
+      showDeleteConfirm = false
+      deletingRecordId = null
     }
+  }
+
+  function cancelDelete() {
+    showDeleteConfirm = false
+    deletingRecordId = null
   }
 
   function getMember(id) {
@@ -197,7 +211,7 @@
                     <button class="w-8 h-8 rounded-lg text-medical-text-secondary hover:bg-medical-blue-50 hover:text-medical-blue-500 transition-all" on:click={() => openEditForm(record)}>
                       <Icon name="edit" size={16} />
                     </button>
-                    <button class="w-8 h-8 rounded-lg text-medical-text-secondary hover:bg-red-50 hover:text-medical-danger transition-all" on:click={() => handleDelete(record.id)}>
+                    <button class="w-8 h-8 rounded-lg text-medical-text-secondary hover:bg-red-50 hover:text-medical-danger transition-all" on:click={() => requestDelete(record.id)}>
                       <Icon name="trash" size={16} />
                     </button>
                   </div>
@@ -263,5 +277,23 @@
   <div slot="footer">
     <button class="btn-ghost" on:click={() => showFormModal = false}>取消</button>
     <button class="btn-primary" on:click={handleSubmit}>{editingRecord ? '保存修改' : '保存记录'}</button>
+  </div>
+</Modal>
+
+<Modal show={showDeleteConfirm} title="确认删除" width="400px" on:close={cancelDelete}>
+  <div class="py-4">
+    <div class="flex items-start gap-3">
+      <div class="w-10 h-10 rounded-full bg-red-100 flex items-center justify-center flex-shrink-0">
+        <Icon name="alert" size={20} color="#EF4444" />
+      </div>
+      <div>
+        <p class="font-medium text-medical-text-primary">确定要删除此用药记录吗？</p>
+        <p class="text-sm text-medical-text-secondary mt-1">删除后将无法恢复。</p>
+      </div>
+    </div>
+  </div>
+  <div slot="footer">
+    <button class="btn-ghost" on:click={cancelDelete}>取消</button>
+    <button class="btn-danger" on:click={confirmDelete}>确认删除</button>
   </div>
 </Modal>
