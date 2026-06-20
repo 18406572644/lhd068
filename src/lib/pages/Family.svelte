@@ -54,13 +54,21 @@
     longTermMedInput = ''
   }
 
+  function closeFormModal() {
+    showFormModal = false
+    editingMember = null
+    resetForm()
+  }
+
   function openAddForm() {
+    closeFormModal()
     editingMember = null
     resetForm()
     showFormModal = true
   }
 
   function openEditForm(member) {
+    closeFormModal()
     editingMember = member
     form = {
       ...getDefaultForm(),
@@ -131,7 +139,7 @@
     } else {
       addMember(form)
     }
-    showFormModal = false
+    closeFormModal()
   }
 
   function requestDelete(id) {
@@ -309,7 +317,7 @@
   </div>
 </div>
 
-<Modal show={showFormModal} title={editingMember ? '编辑成员' : '添加成员'} width="560px">
+<Modal bind:show={showFormModal} title={editingMember ? '编辑成员' : '添加成员'} width="560px" on:close={closeFormModal}>
   <div class="space-y-5 max-h-[70vh] overflow-y-auto pr-1">
     <div>
       <label class="label-base">选择头像</label>
@@ -476,7 +484,7 @@
     </div>
   </div>
   <div slot="footer">
-    <button class="btn-ghost" on:click={() => showFormModal = false}>取消</button>
+    <button class="btn-ghost" on:click={closeFormModal}>取消</button>
     <button class="btn-primary" on:click={handleSubmit}>{editingMember ? '保存修改' : '添加成员'}</button>
   </div>
 </Modal>

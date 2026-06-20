@@ -283,20 +283,45 @@
   }
 
   function openAddForm() {
+    closeFormModal()
     editingMedicine = null
     form = getDefaultForm()
     showFormModal = true
   }
 
   function openEditForm(medicine) {
+    closeFormModal()
     editingMedicine = medicine
     form = { ...medicine }
     showFormModal = true
   }
 
+  function closeFormModal() {
+    showFormModal = false
+    editingMedicine = null
+    form = getDefaultForm()
+  }
+
   function openDetail(medicine) {
+    closeDetailModal()
     selectedMedicineId = medicine.id
     showDetailModal = true
+  }
+
+  function closeDetailModal() {
+    showDetailModal = false
+    selectedMedicineId = null
+  }
+
+  function closeBatchModal() {
+    showBatchModal = false
+    batchRows = [getDefaultForm()]
+  }
+
+  function closeScanModal() {
+    showScanModal = false
+    cameraActive = false
+    scannedBarcode = ''
   }
 
   function requestDelete(id) {
@@ -307,7 +332,7 @@
   function confirmDelete() {
     if (deletingMedicineId) {
       deleteMedicine(deletingMedicineId)
-      showDetailModal = false
+      closeDetailModal()
       showDeleteConfirm = false
       deletingMedicineId = null
     }
@@ -328,7 +353,7 @@
     } else {
       addMedicine(form)
     }
-    showFormModal = false
+    closeFormModal()
   }
 
   function addBatchRow() {
@@ -350,8 +375,7 @@
       return
     }
     addMedicinesBatch(validRows)
-    batchRows = [getDefaultForm()]
-    showBatchModal = false
+    closeBatchModal()
   }
 
   function handleFileUpload(e) {
@@ -400,6 +424,7 @@
   }
 
   function startScanner() {
+    closeScanModal()
     showScanModal = true
     cameraActive = true
     setTimeout(() => {
@@ -410,8 +435,7 @@
   function applyScannedBarcode() {
     if (scannedBarcode) {
       form.barcode = scannedBarcode
-      showScanModal = false
-      cameraActive = false
+      closeScanModal()
       if (!showFormModal) {
         openAddForm()
       }
@@ -419,8 +443,7 @@
   }
 
   function stopScanner() {
-    cameraActive = false
-    showScanModal = false
+    closeScanModal()
   }
 
   $: activeFilterCount = getActiveFilterCount()
@@ -538,7 +561,7 @@
   </div>
 </div>
 
-<Modal show={showFormModal} title={editingMedicine ? '编辑药品' : '添加药品'} width="640px" on:close={() => showFormModal = false}>
+<Modal bind:show={showFormModal} title={editingMedicine ? '编辑药品' : '添加药品'} width="640px" on:close={closeFormModal}>
   <div class="space-y-5">
     <div class="grid grid-cols-2 gap-4">
       <div class="col-span-2">
@@ -724,12 +747,12 @@
     </div>
   </div>
   <div slot="footer">
-    <button class="btn-ghost" on:click={() => showFormModal = false}>取消</button>
+    <button class="btn-ghost" on:click={closeFormModal}>取消</button>
     <button class="btn-primary" on:click={handleSubmit}>{editingMedicine ? '保存修改' : '添加药品'}</button>
   </div>
 </Modal>
 
-<Modal show={showBatchModal} title="批量录入药品" width="720px">
+<Modal bind:show={showBatchModal} title="批量录入药品" width="720px" on:close={closeBatchModal}>
   <div class="overflow-x-auto">
     <table class="w-full text-sm">
       <thead>
@@ -787,12 +810,12 @@
     </button>
   </div>
   <div slot="footer">
-    <button class="btn-ghost" on:click={() => showBatchModal = false}>取消</button>
+    <button class="btn-ghost" on:click={closeBatchModal}>取消</button>
     <button class="btn-primary" on:click={handleBatchSubmit}>批量添加</button>
   </div>
 </Modal>
 
-<Modal show={showDetailModal && selectedMedicine} title={selectedMedicine?.name || ''} width="640px">
+<Modal bind:show={showDetailModal} title={selectedMedicine?.name || ''} width="640px" on:close={closeDetailModal}>
   {#if selectedMedicine}
     <div class="space-y-5">
       <div class="flex items-start gap-4">
@@ -1058,15 +1081,15 @@
       <Icon name="check" size={16} />
       <span class="ml-1">{selectedMedicine?.markedExpired ? '取消标记' : '标记已处理'}</span>
     </button>
-    <button class="btn-ghost" on:click={() => showDetailModal = false}>关闭</button>
-    <button class="btn-primary" on:click={() => { showDetailModal = false; openEditForm(selectedMedicine) }}>
+    <button class="btn-ghost" on:click={closeDetailModal}>关闭</button>
+    <button class="btn-primary" on:click={() => { closeDetailModal(); openEditForm(selectedMedicine) }}>
       <Icon name="edit" size={16} />
       <span class="ml-1">编辑</span>
     </button>
   </div>
 </Modal>
 
-<Modal show={showScanModal} title="扫描条形码" width="520px">
+<Modal bind:show={showScanModal} title="扫描条形码" width="520px" on:close={closeScanModal}>
   <div class="space-y-4">
     <div class="relative aspect-video bg-gray-900 rounded-xl overflow-hidden flex items-center justify-center">
       {#if cameraActive}

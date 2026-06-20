@@ -258,7 +258,7 @@
   on:edit={(e) => { showDetail = false; openEditForm(e.detail) }}
 />
 
-<Modal show={showDeleteConfirm} title="确认删除" width="420px" on:close={() => showDeleteConfirm = false}>
+<Modal bind:show={showDeleteConfirm} title="确认删除" width="420px" on:close={() => { showDeleteConfirm = false; recordToDelete = null }}>
   <div class="text-center py-4">
     <div class="w-16 h-16 mx-auto rounded-full bg-red-50 flex items-center justify-center mb-4">
       <Icon name="alert" size={32} color="#EF4444" />

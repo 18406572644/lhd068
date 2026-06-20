@@ -68,13 +68,21 @@
     pendingSafetyWarnings = []
   }
 
+  function closeFormModal() {
+    showFormModal = false
+    editingRecord = null
+    resetForm()
+  }
+
   function openAddForm() {
+    closeFormModal()
     editingRecord = null
     resetForm()
     showFormModal = true
   }
 
   function openEditForm(record) {
+    closeFormModal()
     editingRecord = record
     form = { ...record }
     showFormModal = true
@@ -117,9 +125,7 @@
     } else {
       addRecord(form)
     }
-    showFormModal = false
-    showSafetyConfirm = false
-    pendingSafetyWarnings = []
+    closeFormModal()
   }
 
   function confirmSafetyAndSubmit() {
@@ -128,9 +134,7 @@
     } else {
       addRecord(form)
     }
-    showFormModal = false
-    showSafetyConfirm = false
-    pendingSafetyWarnings = []
+    closeFormModal()
   }
 
   function cancelSafetyConfirm() {
@@ -284,7 +288,7 @@
   </div>
 </div>
 
-<Modal show={showFormModal} title={editingRecord ? '编辑用药记录' : '记录用药'} width="520px">
+<Modal bind:show={showFormModal} title={editingRecord ? '编辑用药记录' : '记录用药'} width="520px" on:close={closeFormModal}>
   <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
     <div>
       <label class="label-base">成员 <span class="text-medical-danger">*</span></label>
@@ -368,7 +372,7 @@
     {/if}
   </div>
   <div slot="footer">
-    <button class="btn-ghost" on:click={() => showFormModal = false}>取消</button>
+    <button class="btn-ghost" on:click={closeFormModal}>取消</button>
     <button class="btn-primary" on:click={handleSubmit} disabled={currentSafetyResult.hasBlocker}>
       {currentSafetyResult.hasBlocker ? '存在致命风险，无法保存' : editingRecord ? '保存修改' : '保存记录'}
     </button>

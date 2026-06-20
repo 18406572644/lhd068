@@ -62,6 +62,14 @@
     return getMemberById(memberId) || { name: '未知', avatar: '👤' }
   }
 
+  function closeExpiryModal() {
+    showExpiryModal = false
+  }
+
+  function closeVisitReminderModal() {
+    showVisitReminderModal = false
+  }
+
   onMount(() => {
     setTimeout(checkExpiryReminders, 1000)
     setTimeout(checkVisitReminders, 1500)
@@ -314,7 +322,7 @@
   </div>
 </div>
 
-<Modal show={showExpiryModal} title="⚠️ 药品到期提醒" width="480px">
+<Modal bind:show={showExpiryModal} title="⚠️ 药品到期提醒" width="480px" on:close={closeExpiryModal}>
   <div class="space-y-3">
     <p class="text-sm text-medical-text-secondary">有以下药品即将过期或已过期，请及时处理：</p>
     <div class="max-h-64 overflow-y-auto space-y-2">
@@ -332,12 +340,12 @@
     </div>
   </div>
   <div slot="footer">
-    <button class="btn-ghost" on:click={() => showExpiryModal = false}>稍后提醒</button>
-    <button class="btn-primary" on:click={() => { showExpiryModal = false; goTo('medicines') }}>立即查看</button>
+    <button class="btn-ghost" on:click={closeExpiryModal}>稍后提醒</button>
+    <button class="btn-primary" on:click={() => { closeExpiryModal(); goTo('medicines') }}>立即查看</button>
   </div>
 </Modal>
 
-<Modal show={showVisitReminderModal} title="📅 复诊提醒" width="480px">
+<Modal bind:show={showVisitReminderModal} title="📅 复诊提醒" width="480px" on:close={closeVisitReminderModal}>
   <div class="space-y-3">
     <p class="text-sm text-medical-text-secondary">有以下复诊安排，请及时就诊：</p>
     <div class="max-h-64 overflow-y-auto space-y-2">
@@ -378,7 +386,7 @@
     </div>
   </div>
   <div slot="footer">
-    <button class="btn-ghost" on:click={() => showVisitReminderModal = false}>稍后提醒</button>
-    <button class="btn-primary" on:click={() => { showVisitReminderModal = false; goTo('medical-records') }}>查看详情</button>
+    <button class="btn-ghost" on:click={closeVisitReminderModal}>稍后提醒</button>
+    <button class="btn-primary" on:click={() => { closeVisitReminderModal(); goTo('medical-records') }}>查看详情</button>
   </div>
 </Modal>
