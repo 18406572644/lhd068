@@ -16,6 +16,7 @@
 
   let editingAlarm = null
   let selectedMemberId = ''
+  let showAlarmForm = false
   let alarmTimes = ['08:00']
   let alarmDosage = ''
   let alarmDosageUnit = '片'
@@ -32,6 +33,7 @@
   function resetForm() {
     editingAlarm = null
     selectedMemberId = ''
+    showAlarmForm = false
     alarmTimes = ['08:00']
     if (medicine) {
       alarmDosage = medicine.dosage || ''
@@ -40,8 +42,14 @@
   }
 
   function openAddAlarm() {
-    resetForm()
     editingAlarm = null
+    selectedMemberId = ''
+    alarmTimes = ['08:00']
+    if (medicine) {
+      alarmDosage = medicine.dosage || ''
+      alarmDosageUnit = medicine.dosageUnit || '片'
+    }
+    showAlarmForm = true
   }
 
   function openEditAlarm(alarm) {
@@ -50,6 +58,7 @@
     alarmTimes = [...alarm.times]
     alarmDosage = alarm.dosage || ''
     alarmDosageUnit = alarm.dosageUnit || '片'
+    showAlarmForm = true
   }
 
   function addTime() {
@@ -211,7 +220,7 @@
         {/if}
       </div>
 
-      {#if editingAlarm || selectedMemberId}
+      {#if showAlarmForm}
         <div class="border-t border-medical-blue-50 pt-4">
           <p class="text-sm font-medium text-medical-text-secondary mb-3">
             {editingAlarm ? '编辑闹钟' : '新建闹钟'}
@@ -283,7 +292,7 @@
   {/if}
 
   <div slot="footer">
-    {#if editingAlarm || selectedMemberId}
+    {#if showAlarmForm}
       <button class="btn-ghost" on:click={resetForm}>取消</button>
       <button class="btn-primary" on:click={handleSubmit}>
         {editingAlarm ? '保存修改' : '添加闹钟'}

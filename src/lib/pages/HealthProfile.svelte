@@ -1,5 +1,6 @@
 <script>
-  import { onMount, tick, createEventDispatcher } from 'svelte'
+  import { onMount, afterUpdate, tick, createEventDispatcher } from 'svelte'
+  import { get } from 'svelte/store'
   import Icon from '../components/Icon.svelte'
   import Modal from '../components/Modal.svelte'
   import { familyMembers } from '../stores/familyMembers.js'
@@ -37,6 +38,7 @@
 
   let adherenceChart = null
   let adherenceChartRef = null
+  let chartKey = 0
 
   const dispatch = createEventDispatcher()
 
@@ -44,7 +46,7 @@
     selectedMemberId = $familyMembers[0].id
   }
 
-  $: if (selectedMemberId && startDate !== undefined) {
+  $: if (selectedMemberId && startDate) {
     loadProfile()
   }
 
@@ -64,18 +66,27 @@
     endDate = range.end
   })
 
-  async function loadProfile() {
+  function loadProfile() {
     if (!selectedMemberId) return
-    loading = true
     if (adherenceChart) {
       adherenceChart.destroy()
       adherenceChart = null
     }
+    loading = true
     profile = getMemberFullProfile(selectedMemberId, startDate, endDate)
     loading = false
-    await tick()
-    renderAdherenceChart()
+    chartKey++
   }
+
+  let lastChartKey = -1
+  afterUpdate(() => {
+    if (adherenceChartRef && profile && chartKey !== lastChartKey) {
+      lastChartKey = chartKey
+      tick().then(() => {
+        renderAdherenceChart()
+      })
+    }
+  })
 
   function renderAdherenceChart() {
     if (!adherenceChartRef || !profile) return
@@ -120,9 +131,6 @@
         options: {
           responsive: true,
           maintainAspectRatio: false,
-          animation: {
-            duration: 300
-          },
           plugins: {
             legend: { display: false },
             tooltip: {
@@ -155,6 +163,7 @@
           }
         }
       })
+      chartRendered = true
     } catch (e) {
       console.error('渲染图表失败:', e)
     }
@@ -680,7 +689,7 @@
               </div>
               <h4 class="font-semibold text-medical-text-primary">用药依从性趋势</h4>
             </div>
-            <div class="h-48 w-full relative">
+            <div class="h-48">
               <canvas bind:this={adherenceChartRef}></canvas>
             </div>
           </div>

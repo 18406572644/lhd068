@@ -1,1059 +1,580 @@
 import jsPDF from 'jspdf'
-import QRCode from 'qrcode'
-import { generateQRCodePayload, generateEmergencyCardData } from './healthProfile.js'
+import html2canvas from 'html2canvas'
 import { formatDate } from './helpers.js'
+import { generateQRCodePayload, generateEmergencyCardData } from './healthProfile.js'
+import QRCode from 'qrcode'
 
-const PAGE_WIDTH_MM = 210
-const PAGE_HEIGHT_MM = 297
-const MARGIN_MM = 15
-const CONTENT_WIDTH_MM = PAGE_WIDTH_MM - MARGIN_MM * 2
+const A4_WIDTH = 210
+const A4_HEIGHT = 297
+const DPI = 2
+const PIXEL_WIDTH = A4_WIDTH * DPI * 3.78
+const PIXEL_HEIGHT = A4_HEIGHT * DPI * 3.78
 
-const DPI = 300
-const MM_TO_PX = DPI / 25.4
-const SCALE = 2
-
-const PAGE_WIDTH_PX = Math.round(PAGE_WIDTH_MM * MM_TO_PX)
-const PAGE_HEIGHT_PX = Math.round(PAGE_HEIGHT_MM * MM_TO_PX)
-const MARGIN_PX = MARGIN_MM * MM_TO_PX
-const CONTENT_WIDTH_PX = CONTENT_WIDTH_MM * MM_TO_PX
-
-const FONT_STACK = [
-  '"PingFang SC"',
-  '"Microsoft YaHei"',
-  '"Source Han Sans SC"',
-  '"Noto Sans SC"',
-  '"Hiragino Sans GB"',
-  '"WenQuanYi Micro Hei"',
-  'sans-serif'
-].join(', ')
-
-const COLORS = {
-  primary: '#3B82F6',
-  primaryDark: '#2563EB',
-  primaryLight: '#DBEAFE',
-  primaryBg: '#EFF6FF',
-  danger: '#EF4444',
-  dangerLight: '#FEE2E2',
-  dangerBg: '#FEF2F2',
-  warning: '#F59E0B',
-  warningLight: '#FEF3C7',
-  warningBg: '#FFFBEB',
-  success: '#10B981',
-  successLight: '#D1FAE5',
-  successBg: '#ECFDF5',
-  purple: '#8B5CF6',
-  purpleLight: '#EDE9FE',
-  purpleBg: '#F5F3FF',
-  cyan: '#06B6D4',
-  rose: '#F43F5E',
-  textPrimary: '#111827',
-  textSecondary: '#4B5563',
-  textTertiary: '#6B7280',
-  textMuted: '#9CA3AF',
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  bgGray: '#F9FAFB',
-  white: '#FFFFFF'
-}
-
-function mmToPx(mm) {
-  return mm * MM_TO_PX
-}
-
-function createHiDPICanvas(widthPx, heightPx) {
-  const canvas = document.createElement('canvas')
-  canvas.width = Math.round(widthPx * SCALE)
-  canvas.height = Math.round(heightPx * SCALE)
-  const ctx = canvas.getContext('2d')
-  ctx.scale(SCALE, SCALE)
-  ctx.textBaseline = 'top'
-  ctx.imageSmoothingEnabled = true
-  ctx.imageSmoothingQuality = 'high'
-  return { canvas, ctx }
-}
-
-function setFont(ctx, sizePx, weight = 'normal') {
-  ctx.font = `${weight} ${sizePx}px ${FONT_STACK}`
-  ctx.textBaseline = 'top'
-}
-
-function drawRoundedRect(ctx, x, y, w, h, r) {
-  if (w < 2 * r) r = w / 2
-  if (h < 2 * r) r = h / 2
-  ctx.beginPath()
-  ctx.moveTo(x + r, y)
-  ctx.arcTo(x + w, y, x + w, y + h, r)
-  ctx.arcTo(x + w, y + h, x, y + h, r)
-  ctx.arcTo(x, y + h, x, y, r)
-  ctx.arcTo(x, y, x + w, y, r)
-  ctx.closePath()
-}
-
-function wrapText(ctx, text, maxWidthPx) {
-  if (!text) return ['']
-  const chars = String(text).split('')
-  const lines = []
-  let currentLine = ''
-
-  for (let i = 0; i < chars.length; i++) {
-    const char = chars[i]
-    if (char === '\n') {
-      lines.push(currentLine)
-      currentLine = ''
-      continue
-    }
-    const testLine = currentLine + char
-    const metrics = ctx.measureText(testLine)
-    if (metrics.width > maxWidthPx && currentLine !== '') {
-      lines.push(currentLine)
-      currentLine = char
-    } else {
-      currentLine = testLine
-    }
-  }
-  if (currentLine) lines.push(currentLine)
-  return lines
-}
-
-function hexToRgb(hex) {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
-  return result
-    ? [parseInt(result[1], 16), parseInt(result[2], 16), parseInt(result[3], 1)]
-    : [59, 130, 246]
-}
-
-function rgba(hex, alpha = 1) {
-  const [r, g, b] = hexToRgb(hex)
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
-async function generateQRCodeImage(text, sizePx) {
+async function generateQRCodeDataURL(text, size = 300) {
   try {
-    const dataUrl = await QRCode.toDataURL(text, {
-      width: Math.round(sizePx * SCALE),
-      margin: 2,
-      color: { dark: '#111827', light: '#FFFFFF' },
-      errorCorrectionLevel: 'M'
+    return await QRCode.toDataURL(text, {
+      width: size,
+      margin: 1,
+      color: { dark: '#111827', light: '#FFFFFF' }
     })
-    const img = new Image()
-    img.src = dataUrl
-    await new Promise((resolve, reject) => {
-      img.onload = resolve
-      img.onerror = reject
-    })
-    return img
-  } catch (e) {
-    console.warn('生成二维码失败:', e)
-    return null
+  } catch {
+    return ''
   }
 }
 
-function drawPageHeader(ctx, title, subtitle, pageNum, totalPages) {
-  ctx.fillStyle = COLORS.primary
-  ctx.fillRect(0, 0, PAGE_WIDTH_PX, mmToPx(25))
+function buildReportHTML(profile, options) {
+  const { startDate, endDate } = options
+  const basic = profile.basicInfo
+  const hasAllergies = basic.allergyLabels?.length > 0
+  const hasHighRisk = profile.safetyAssessment?.summary?.highCount > 0
+  const dateRange = (startDate && endDate) ? `${startDate} 至 ${endDate}` : '全部数据'
+  const qrPayload = generateQRCodePayload(basic.id)
 
-  ctx.fillStyle = COLORS.white
-  setFont(ctx, 18, 'bold')
-  ctx.fillText(title, MARGIN_PX, mmToPx(8))
+  const safety = profile.safetyAssessment?.summary || {}
+  const riskColor = safety.overallRiskColor || '#10B981'
+  const riskText = safety.overallRiskText || '低风险'
+  const riskDesc = safety.overallRiskDesc || ''
 
-  if (subtitle) {
-    setFont(ctx, 11, 'normal')
-    ctx.globalAlpha = 0.9
-    ctx.fillText(subtitle, MARGIN_PX, mmToPx(15.5))
-    ctx.globalAlpha = 1
-  }
+  const medsHTML = (profile.currentMedications || []).map((m, i) => `
+    <tr style="${i % 2 === 1 ? 'background: #F9FAFB;' : ''}">
+      <td style="padding: 10px 12px; font-size: 13px; color: #1F2937; font-weight: 500; border-bottom: 1px solid #F3F4F6;">
+        ${m.name || '-'}
+        ${m.usage ? `<div style="font-size: 11px; color: #9CA3AF; margin-top: 4px; font-weight: 400;">${m.usage}</div>` : ''}
+      </td>
+      <td style="padding: 10px 12px; font-size: 13px; color: #6B7280; border-bottom: 1px solid #F3F4F6;">
+        ${m.dosage || '-'}${m.dosageUnit || ''}
+      </td>
+      <td style="padding: 10px 12px; font-size: 13px; color: #6B7280; border-bottom: 1px solid #F3F4F6;">
+        ${m.frequency || '-'}
+      </td>
+      <td style="padding: 10px 12px; font-size: 13px; color: #6B7280; border-bottom: 1px solid #F3F4F6;">
+        ${m.specification || '-'}
+      </td>
+      <td style="padding: 10px 12px; font-size: 13px; border-bottom: 1px solid #F3F4F6;">
+        ${m.isLongTerm
+          ? '<span style="padding: 2px 8px; border-radius: 6px; background: #EFF6FF; color: #3B82F6; font-size: 12px; font-weight: 500;">长期用药</span>'
+          : m.duration
+            ? `<span style="padding: 2px 8px; border-radius: 6px; background: #F5F3FF; color: #8B5CF6; font-size: 12px; font-weight: 500;">${m.duration}</span>`
+            : '<span style="padding: 2px 8px; border-radius: 6px; background: #F3F4F6; color: #6B7280; font-size: 12px;">短期</span>'}
+      </td>
+    </tr>
+  `).join('')
 
-  setFont(ctx, 10, 'normal')
-  ctx.globalAlpha = 0.85
-  ctx.textAlign = 'right'
-  ctx.fillText(`第 ${pageNum} / ${totalPages} 页`, PAGE_WIDTH_PX - MARGIN_PX, mmToPx(11))
-  ctx.textAlign = 'left'
-  ctx.globalAlpha = 1
+  const recordsHTML = (profile.medicalRecords || []).slice(0, 10).map(r => `
+    <div style="margin-bottom: 16px; padding: 14px; background: #FAFAFF; border: 1px solid #EDE9FE; border-radius: 12px;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px; flex-wrap: wrap;">
+        <span style="font-size: 14px; font-weight: 600; color: #7C3AED;">${r.visitDate || '-'}</span>
+        <span style="font-size: 12px; color: #9CA3AF;">${r.hospital || ''} ${r.department ? '· ' + r.department : ''}</span>
+      </div>
+      <div style="font-size: 13px; font-weight: 500; color: #111827; margin-bottom: 4px;">诊断：${r.diagnosis || '-'}</div>
+      ${r.chiefComplaint ? `<div style="font-size: 12px; color: #6B7280; margin-bottom: 6px;">主诉：${r.chiefComplaint}</div>` : ''}
+      ${r.prescribedMedicines?.length > 0 ? `
+        <div style="font-size: 12px; color: #6B7280;">
+          <span style="font-weight: 500; color: #3B82F6;">处方用药：</span>
+          ${r.prescribedMedicines.map((pm, i) =>
+            `${i + 1}. ${pm.medicineName} ${pm.dosage || ''}${pm.dosageUnit || ''} ${pm.frequency || ''} ${pm.duration || ''}`
+          ).join('  ')}
+        </div>
+      ` : ''}
+      ${r.notes ? `<div style="font-size: 11px; color: #9CA3AF; margin-top: 4px;">医嘱：${r.notes}</div>` : ''}
+    </div>
+  `).join('')
 
-  ctx.strokeStyle = COLORS.border
-  ctx.lineWidth = 1
-  ctx.beginPath()
-  ctx.moveTo(MARGIN_PX, mmToPx(33))
-  ctx.lineTo(PAGE_WIDTH_PX - MARGIN_PX, mmToPx(33))
-  ctx.stroke()
+  const warningsHTML = (profile.safetyAssessment?.warnings || []).slice(0, 10).map(w => {
+    const bg = w.level === 'high' ? '#FEF2F2' : w.level === 'medium' ? '#FFFBEB' : '#EFF6FF'
+    const border = w.level === 'high' ? '#FECACA' : w.level === 'medium' ? '#FDE68A' : '#BFDBFE'
+    const color = w.level === 'high' ? '#DC2626' : w.level === 'medium' ? '#D97706' : '#2563EB'
+    const label = w.level === 'high' ? '高风险' : w.level === 'medium' ? '中风险' : '低风险'
+    const typeMap = { allergy: '过敏冲突', disease: '慢病禁忌', organ: '器官禁忌', dosage: '剂量提示', interaction: '药物相互作用' }
+    const typeLabel = typeMap[w.type] || w.type
+    return `
+      <div style="padding: 10px 12px; margin-bottom: 8px; background: ${bg}; border: 1px solid ${border}; border-radius: 10px;">
+        <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px; flex-wrap: wrap;">
+          <span style="padding: 1px 8px; border-radius: 999px; background: white; font-size: 11px; font-weight: 600; color: ${color};">${label}</span>
+          <span style="padding: 1px 8px; border-radius: 999px; background: rgba(255,255,255,0.6); font-size: 11px; color: #4B5563;">${typeLabel}</span>
+          <span style="font-size: 12px; font-weight: 600; color: #111827;">${w.medicine} · ${w.title}</span>
+        </div>
+        <div style="font-size: 12px; color: #4B5563;">${w.description}</div>
+      </div>
+    `
+  }).join('')
+
+  const html = `
+    <div id="health-report" style="width: ${PIXEL_WIDTH}px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #FFFFFF; color: #111827; box-sizing: border-box; padding: 40px 50px;">
+      <div style="background: linear-gradient(135deg, #3B82F6 0%, #1D4ED8 100%); color: white; margin: -40px -50px 32px; padding: 48px 50px 36px;">
+        <h1 style="font-size: 32px; font-weight: 700; margin: 0 0 6px;">健康档案报告</h1>
+        <p style="font-size: 16px; margin: 0; opacity: 0.9;">${basic.name} · 报告周期：${dateRange}</p>
+      </div>
+
+      <div style="background: ${hasAllergies || hasHighRisk ? '#FEF2F2' : '#ECFDF5'}; border: 2px solid ${hasAllergies || hasHighRisk ? '#FECACA' : '#A7F3D0'}; border-radius: 16px; padding: 18px 24px; margin-bottom: 32px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 28px;">${hasAllergies || hasHighRisk ? '⚠️' : '✅'}</span>
+          <div>
+            <div style="font-size: 18px; font-weight: 700; color: ${hasAllergies || hasHighRisk ? '#DC2626' : '#059669'};">
+              ${hasAllergies || hasHighRisk ? '重要提醒：存在过敏史或高风险用药，就医时请务必告知医生！' : '暂无特殊过敏禁忌，整体状况良好'}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin-bottom: 32px;">
+        <div>
+          <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #3B82F6;">个人基本信息</h2>
+          <div style="display: flex; align-items: center; gap: 18px; margin-bottom: 16px;">
+            <div style="width: 68px; height: 68px; border-radius: 16px; background: ${basic.color}20; display: flex; align-items: center; justify-content: center; font-size: 36px;">
+              ${basic.avatar || '👤'}
+            </div>
+            <div>
+              <div style="font-size: 22px; font-weight: 700; color: #111827;">${basic.name}</div>
+              <div style="font-size: 14px; color: #6B7280; margin-top: 2px;">${basic.relation || ''} · ${basic.ageText || ''}</div>
+            </div>
+          </div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px;">
+            <div><span style="color: #9CA3AF; font-size: 13px;">出生日期</span><div style="font-size: 14px; font-weight: 500; color: #374151;">${basic.birthDate || '-'}</div></div>
+            <div><span style="color: #9CA3AF; font-size: 13px;">体重</span><div style="font-size: 14px; font-weight: 500; color: #374151;">${basic.weight ? basic.weight + ' kg' : '-'}</div></div>
+            <div><span style="color: #9CA3AF; font-size: 13px;">报告时间</span><div style="font-size: 14px; font-weight: 500; color: #374151;">${formatDate(new Date().toISOString())}</div></div>
+            <div><span style="color: #9CA3AF; font-size: 13px;">用药种数</span><div style="font-size: 14px; font-weight: 500; color: #374151;">${profile.currentMedications?.length || 0} 种</div></div>
+          </div>
+        </div>
+
+        <div>
+          <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #EF4444;">过敏史与禁忌</h2>
+          <div style="font-size: 15px; font-weight: ${hasAllergies ? '600' : '400'}; color: ${hasAllergies ? '#DC2626' : '#6B7280'}; line-height: 1.7;">
+            ${hasAllergies ? basic.allergyLabels.join('、') : '无已知过敏史'}
+          </div>
+
+          <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 24px 0 16px; padding-left: 10px; border-left: 4px solid #F59E0B;">慢性病史</h2>
+          <div style="font-size: 15px; color: ${basic.chronicLabels?.length > 0 ? '#D97706' : '#6B7280'}; font-weight: ${basic.chronicLabels?.length > 0 ? '600' : '400'};">
+            ${basic.chronicLabels?.length > 0 ? basic.chronicLabels.join('、') : '无慢性病记录'}
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;">
+            <div style="padding: 12px; background: ${basic.liverFunction === 'normal' ? '#ECFDF5' : '#FEF2F2'}; border-radius: 10px;">
+              <div style="font-size: 12px; color: #9CA3AF;">肝功能</div>
+              <div style="font-size: 16px; font-weight: 700; color: ${basic.liverFunction === 'normal' ? '#059669' : '#DC2626'}; margin-top: 2px;">${basic.liverFunctionLabel || '正常'}</div>
+            </div>
+            <div style="padding: 12px; background: ${basic.kidneyFunction === 'normal' ? '#ECFDF5' : '#FEF2F2'}; border-radius: 10px;">
+              <div style="font-size: 12px; color: #9CA3AF;">肾功能</div>
+              <div style="font-size: 16px; font-weight: 700; color: ${basic.kidneyFunction === 'normal' ? '#059669' : '#DC2626'}; margin-top: 2px;">${basic.kidneyFunctionLabel || '正常'}</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 32px;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #3B82F6;">当前用药清单</h2>
+        <div style="border: 1px solid #E5E7EB; border-radius: 12px; overflow: hidden;">
+          <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+              <tr style="background: #F3F4F6;">
+                <th style="text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 600; color: #374151;">药品名称</th>
+                <th style="text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 600; color: #374151;">剂量</th>
+                <th style="text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 600; color: #374151;">频次</th>
+                <th style="text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 600; color: #374151;">规格</th>
+                <th style="text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 600; color: #374151;">类型</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${medsHTML || '<tr><td colspan="5" style="padding: 24px; text-align: center; color: #9CA3AF; font-size: 13px;">暂无用药记录</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div style="margin-bottom: 32px;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #8B5CF6;">近期就诊记录</h2>
+        ${recordsHTML || '<div style="padding: 24px; text-align: center; color: #9CA3AF; font-size: 14px; background: #F9FAFB; border-radius: 12px;">暂无就诊记录</div>'}
+      </div>
+
+      <div style="margin-bottom: 32px;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #06B6D4;">用药依从性统计</h2>
+        ${buildAdherenceChartHTML(profile.adherence || {})}
+      </div>
+
+      <div style="margin-bottom: 32px;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #F43F5E;">药物安全评估摘要</h2>
+        <div style="background: ${riskColor}15; border: 1.5px solid ${riskColor}50; border-radius: 14px; padding: 18px 22px; margin-bottom: 16px;">
+          <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 10px;">
+            <div style="font-size: 16px; font-weight: 700; color: ${riskColor};">综合风险等级：${riskText}</div>
+          </div>
+          <div style="font-size: 13px; color: #4B5563; margin-top: 6px;">${riskDesc}</div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px;">
+          <div style="text-align: center; padding: 14px 8px; background: #FEF2F2; border-radius: 10px;">
+            <div style="font-size: 24px; font-weight: 700; color: #EF4444;">${safety.highCount || 0}</div>
+            <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">高风险</div>
+          </div>
+          <div style="text-align: center; padding: 14px 8px; background: #FFFBEB; border-radius: 10px;">
+            <div style="font-size: 24px; font-weight: 700; color: #F59E0B;">${safety.mediumCount || 0}</div>
+            <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">中风险</div>
+          </div>
+          <div style="text-align: center; padding: 14px 8px; background: #EFF6FF; border-radius: 10px;">
+            <div style="font-size: 24px; font-weight: 700; color: #3B82F6;">${safety.lowCount || 0}</div>
+            <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">低风险</div>
+          </div>
+          <div style="text-align: center; padding: 14px 8px; background: #FDF2F8; border-radius: 10px;">
+            <div style="font-size: 24px; font-weight: 700; color: #EC4899;">${safety.allergyRisk || 0}</div>
+            <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">过敏项</div>
+          </div>
+          <div style="text-align: center; padding: 14px 8px; background: #F5F3FF; border-radius: 10px;">
+            <div style="font-size: 24px; font-weight: 700; color: #8B5CF6;">${safety.chronicCount || 0}</div>
+            <div style="font-size: 12px; color: #6B7280; margin-top: 2px;">慢性病</div>
+          </div>
+        </div>
+
+        ${warningsHTML ? `
+          <div style="margin-top: 16px;">
+            <div style="font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 10px;">风险明细</div>
+            ${warningsHTML}
+          </div>
+        ` : ''}
+      </div>
+
+      <div style="margin-bottom: 20px;">
+        <h2 style="font-size: 18px; font-weight: 700; color: #111827; margin: 0 0 16px; padding-left: 10px; border-left: 4px solid #3B82F6;">扫码查看电子档案</h2>
+        <div style="display: flex; align-items: flex-start; gap: 24px; padding: 20px; background: #F9FAFB; border-radius: 14px;">
+          <div style="width: 120px; height: 120px; background: white; border: 2px solid #E5E7EB; border-radius: 10px; padding: 8px; flex-shrink: 0;">
+            ${qrPayload ? `<img id="report-qr" src="" alt="二维码" style="width: 100%; height: 100%; object-fit: contain; display: none;" />` : ''}
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 14px; font-weight: 600; color: #111827; margin-bottom: 8px;">使用说明</div>
+            <div style="font-size: 13px; color: #6B7280; line-height: 1.7;">
+              医生或急救人员可使用手机扫描左侧二维码，快速获取患者的关键健康信息（过敏史、禁忌、当前用药等）。<br>
+              建议将此页打印随身携带或存入手机相册。
+            </div>
+            <div style="font-size: 11px; color: #9CA3AF; margin-top: 10px;">二维码生成时间：${formatDate(new Date().toISOString())}</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid #E5E7EB; padding-top: 12px; font-size: 11px; color: #9CA3AF; display: flex; justify-content: space-between;">
+        <span>家庭健康档案 · ${basic.name}</span>
+        <span>生成时间：${formatDate(new Date().toISOString())}</span>
+      </div>
+    </div>
+  `
+
+  return { html, qrPayload }
 }
 
-function drawPageFooter(ctx, memberName) {
-  const footerY = PAGE_HEIGHT_PX - mmToPx(12)
-  ctx.strokeStyle = COLORS.border
-  ctx.lineWidth = 0.8
-  ctx.beginPath()
-  ctx.moveTo(MARGIN_PX, footerY - mmToPx(5))
-  ctx.lineTo(PAGE_WIDTH_PX - MARGIN_PX, footerY - mmToPx(5))
-  ctx.stroke()
-
-  setFont(ctx, 9, 'normal')
-  ctx.fillStyle = COLORS.textMuted
-  ctx.fillText(`家庭健康档案 · ${memberName || ''}`, MARGIN_PX, footerY)
-  ctx.textAlign = 'right'
-  ctx.fillText(`生成时间：${formatDate(new Date().toISOString())}`, PAGE_WIDTH_PX - MARGIN_PX, footerY)
-  ctx.textAlign = 'left'
-}
-
-function drawSectionTitle(ctx, title, y, color = COLORS.primary) {
-  ctx.fillStyle = color
-  ctx.fillRect(MARGIN_PX, y, mmToPx(1.2), mmToPx(6))
-
-  setFont(ctx, 14, 'bold')
-  ctx.fillStyle = COLORS.textPrimary
-  ctx.fillText(title, MARGIN_PX + mmToPx(3), y - mmToPx(0.5))
-
-  return y + mmToPx(10)
-}
-
-function drawAdherenceChartCanvas(adherence, widthPx, heightPx) {
-  const { canvas, ctx } = createHiDPICanvas(widthPx, heightPx)
-
-  ctx.fillStyle = COLORS.white
-  ctx.fillRect(0, 0, widthPx, heightPx)
-
-  const padding = { top: mmToPx(10), right: mmToPx(8), bottom: mmToPx(18), left: mmToPx(14) }
-  const chartW = widthPx - padding.left - padding.right
-  const chartH = heightPx - padding.top - padding.bottom
-
+function buildAdherenceChartHTML(adherence) {
   const labels = adherence.weekLabels || []
   const data = adherence.weeklyData || []
-
-  setFont(ctx, 14, 'bold')
-  ctx.fillStyle = COLORS.textPrimary
-  ctx.textAlign = 'center'
-  ctx.fillText('用药依从性统计图', widthPx / 2, mmToPx(3))
-  ctx.textAlign = 'left'
+  const maxVal = Math.max(...data, 21)
+  const rate = adherence.adherenceRate || 0
+  const levelColor = adherence.levelColor || '#EF4444'
+  const levelText = adherence.levelText || '需要改善'
 
   if (data.length === 0) {
-    setFont(ctx, 12, 'normal')
-    ctx.fillStyle = COLORS.textMuted
-    ctx.textAlign = 'center'
-    ctx.fillText('暂无足够数据生成图表', widthPx / 2, heightPx / 2 - mmToPx(3))
-    ctx.textAlign = 'left'
-    return canvas
+    return `<div style="padding: 40px; text-align: center; color: #9CA3AF; font-size: 14px; background: #F9FAFB; border-radius: 12px;">暂无足够数据生成图表</div>`
   }
 
-  const maxValue = Math.max(...data, 21)
-  const yTicks = 5
-  const yStep = maxValue / yTicks
+  const barWidth = 100 / data.length * 0.6
+  const barGap = 100 / data.length * 0.2
 
-  ctx.strokeStyle = COLORS.border
-  ctx.lineWidth = 1
-  setFont(ctx, 10, 'normal')
-  ctx.fillStyle = COLORS.textTertiary
-  ctx.textAlign = 'right'
+  const bars = data.map((v, i) => {
+    const h = (v / maxVal) * 180
+    const left = i * (100 / data.length) + barGap
+    return `
+      <div style="position: absolute; bottom: 30px; left: ${left}%; width: ${barWidth}%; height: ${h}px;
+        background: linear-gradient(to top, ${levelColor}, ${levelColor}CC);
+        border-radius: 6px 6px 0 0;">
+        <div style="position: absolute; top: -20px; left: 50%; transform: translateX(-50%);
+          font-size: 12px; font-weight: 600; color: #374151;">${v}</div>
+      </div>
+      <div style="position: absolute; bottom: 6px; left: ${left - barGap * 0.5}%; width: ${barWidth + barGap}%;
+        text-align: center; font-size: 10px; color: #9CA3AF;">${labels[i] || ''}</div>
+    `
+  }).join('')
 
-  for (let i = 0; i <= yTicks; i++) {
-    const y = padding.top + (chartH / yTicks) * i
-    const value = Math.round(maxValue - yStep * i)
-    ctx.beginPath()
-    ctx.moveTo(padding.left, y)
-    ctx.lineTo(padding.left + chartW, y)
-    ctx.stroke()
-    ctx.fillText(String(value), padding.left - mmToPx(2), y - mmToPx(2.5))
-  }
+  const gridLines = [0, 0.25, 0.5, 0.75, 1].map(p => {
+    const y = p * 180 + 30
+    const val = Math.round(maxVal * (1 - p))
+    return `
+      <div style="position: absolute; left: 0; right: 0; top: ${y}px; border-top: 1px dashed #E5E7EB;">
+        <span style="position: absolute; left: -34px; top: -8px; font-size: 11px; color: #9CA3AF; width: 30px; text-align: right;">${val}</span>
+      </div>
+    `
+  }).join('')
 
-  const barWidth = chartW / data.length * 0.65
-  const gap = chartW / data.length * 0.35
-
-  setFont(ctx, 9, 'normal')
-  ctx.fillStyle = COLORS.textTertiary
-  ctx.textAlign = 'center'
-
-  const barColor = adherence.level === 'high'
-    ? COLORS.success
-    : adherence.level === 'medium'
-      ? COLORS.warning
-      : COLORS.danger
-
-  data.forEach((value, index) => {
-    const x = padding.left + (chartW / data.length) * index + gap / 2
-    const barH = (value / maxValue) * chartH
-    const y = padding.top + chartH - barH
-
-    const gradient = ctx.createLinearGradient(0, y, 0, y + barH)
-    gradient.addColorStop(0, barColor)
-    gradient.addColorStop(1, rgba(barColor, 0.7))
-    ctx.fillStyle = gradient
-
-    drawRoundedRect(ctx, x, y, barWidth, barH, mmToPx(1))
-    ctx.fill()
-
-    setFont(ctx, 11, 'bold')
-    ctx.fillStyle = COLORS.textPrimary
-    ctx.fillText(String(value), x + barWidth / 2, y - mmToPx(5))
-
-    setFont(ctx, 9, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    const labelText = labels[index] || ''
-    ctx.fillText(labelText, x + barWidth / 2, padding.top + chartH + mmToPx(3))
-  })
-
-  ctx.textAlign = 'left'
-
-  setFont(ctx, 9, 'normal')
-  ctx.fillStyle = COLORS.textMuted
-  ctx.textAlign = 'center'
-  ctx.fillText('（按周统计服药次数，基准为每日3次）', widthPx / 2, heightPx - mmToPx(5))
-  ctx.textAlign = 'left'
-
-  return canvas
+  return `
+    <div style="display: flex; gap: 24px; align-items: flex-start;">
+      <div style="flex-shrink: 0; width: 130px;">
+        <div style="text-align: center; padding: 18px; background: #F0FDFA; border-radius: 14px;">
+          <div style="font-size: 12px; color: #6B7280;">依从性评分</div>
+          <div style="font-size: 36px; font-weight: 700; color: ${levelColor}; margin-top: 4px;">${rate}%</div>
+          <div style="font-size: 13px; font-weight: 600; color: ${levelColor}; margin-top: 4px;">${levelText}</div>
+        </div>
+        <div style="margin-top: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+          <div style="text-align: center; padding: 10px 6px; background: #F9FAFB; border-radius: 8px;">
+            <div style="font-size: 16px; font-weight: 600; color: #374151;">${adherence.totalDays || 0}</div>
+            <div style="font-size: 10px; color: #9CA3AF;">统计天数</div>
+          </div>
+          <div style="text-align: center; padding: 10px 6px; background: #F9FAFB; border-radius: 8px;">
+            <div style="font-size: 16px; font-weight: 600; color: #374151;">${adherence.daysWithDosing || 0}</div>
+            <div style="font-size: 10px; color: #9CA3AF;">有记录天</div>
+          </div>
+        </div>
+      </div>
+      <div style="flex: 1; position: relative; height: 230px; margin-left: 40px;">
+        ${gridLines}
+        ${bars}
+      </div>
+    </div>
+  `
 }
 
-function estimateTotalPages(profile) {
-  let pages = 1
-  const medsCount = profile.currentMedications?.length || 0
-  const recordsCount = profile.medicalRecords?.length || 0
-  const warningsCount = profile.safetyAssessment?.warnings?.length || 0
-
-  if (medsCount > 5) pages += Math.ceil((medsCount - 5) / 7)
-  if (recordsCount > 2) pages += Math.ceil((recordsCount - 2) / 3)
-  if (warningsCount > 2) pages += Math.ceil((warningsCount - 2) / 4)
-  pages += 1
-
-  return Math.max(pages, 3)
-}
-
-class PDFRenderer {
-  constructor(profile, options = {}) {
-    this.profile = profile
-    this.options = options
-    this.pages = []
-    this.currentPageIdx = 0
-    this.cursorY = 0
-    this.totalPages = estimateTotalPages(profile)
-    this.dateRangeText = ''
-  }
-
-  init() {
-    const { startDate, endDate } = this.options
-    this.dateRangeText = (startDate && endDate)
-      ? `报告周期：${startDate} 至 ${endDate}`
-      : '报告周期：全部数据'
-    this._newPage()
-  }
-
-  _newPage() {
-    const { canvas, ctx } = createHiDPICanvas(PAGE_WIDTH_PX, PAGE_HEIGHT_PX)
-    ctx.fillStyle = COLORS.white
-    ctx.fillRect(0, 0, PAGE_WIDTH_PX, PAGE_HEIGHT_PX)
-
-    const pageNum = this.pages.length + 1
-    drawPageHeader(ctx, '健康档案报告', `${this.profile.basicInfo.name} · ${this.dateRangeText}`, pageNum, this.totalPages)
-    drawPageFooter(ctx, this.profile.basicInfo.name)
-
-    this.currentCtx = ctx
-    this.currentCanvas = canvas
-    this.cursorY = mmToPx(40)
-    this.pages.push(canvas)
-  }
-
-  ensureSpace(neededPx) {
-    if (this.cursorY + neededPx > PAGE_HEIGHT_PX - mmToPx(22)) {
-      this._newPage()
-      return true
-    }
-    return false
-  }
-
-  async render() {
-    this._renderPersonalInfo()
-    this._renderCurrentMeds()
-    this._renderMedicalRecords()
-    this._renderAdherence()
-    this._renderSafetyAssessment()
-    await this._renderQRCodeSection()
-    return this.pages
-  }
-
-  _renderPersonalInfo() {
-    const ctx = this.currentCtx
-    let y = this.cursorY
-
-    y = drawSectionTitle(ctx, '个人信息与过敏禁忌摘要', y, COLORS.danger)
-
-    const hasAllergies = this.profile.basicInfo.allergyLabels?.length > 0
-    const hasHighRisk = this.profile.safetyAssessment?.summary?.highCount > 0
-    const isHighAlert = hasAllergies || hasHighRisk
-
-    const bannerBg = isHighAlert ? COLORS.dangerLight : COLORS.successLight
-    const bannerText = isHighAlert
-      ? '⚠ 重要：存在过敏史或高风险用药，就医时请务必告知医生！'
-      : '✓ 暂无特殊过敏禁忌'
-    const bannerTextColor = isHighAlert ? '#991B1B' : '#166534'
-
-    ctx.fillStyle = bannerBg
-    drawRoundedRect(ctx, MARGIN_PX, y, CONTENT_WIDTH_PX, mmToPx(9), mmToPx(2))
-    ctx.fill()
-
-    setFont(ctx, 12, 'bold')
-    ctx.fillStyle = bannerTextColor
-    ctx.textAlign = 'center'
-    ctx.fillText(bannerText, PAGE_WIDTH_PX / 2, y + mmToPx(3))
-    ctx.textAlign = 'left'
-    y += mmToPx(14)
-
-    const colW = (CONTENT_WIDTH_PX - mmToPx(8)) / 2
-    const leftX = MARGIN_PX
-    const rightX = MARGIN_PX + colW + mmToPx(8)
-    const lineGap = mmToPx(6)
-
-    const infoPairs = [
-      ['姓名：', this.profile.basicInfo.name, '关系：', this.profile.basicInfo.relation],
-      ['年龄：', this.profile.basicInfo.ageText || '-', '出生日期：', this.profile.basicInfo.birthDate || '-'],
-      ['体重：', this.profile.basicInfo.weight ? `${this.profile.basicInfo.weight} kg` : '-', '报告时间：', formatDate(new Date().toISOString())]
-    ]
-
-    for (const [lLabel, lValue, rLabel, rValue] of infoPairs) {
-      this._drawLabelValue(ctx, lLabel, lValue, leftX, y)
-      this._drawLabelValue(ctx, rLabel, rValue, rightX, y)
-      y += lineGap
-    }
-
-    y += mmToPx(4)
-    y = drawSectionTitle(ctx, '过敏史与禁忌', y, COLORS.danger)
-
-    const allergyText = this.profile.basicInfo.allergyLabels?.length > 0
-      ? this.profile.basicInfo.allergyLabels.join('、')
-      : '无已知过敏史'
-
-    setFont(ctx, this.profile.basicInfo.allergyLabels?.length > 0 ? 13 : 12,
-      this.profile.basicInfo.allergyLabels?.length > 0 ? 'bold' : 'normal')
-    ctx.fillStyle = this.profile.basicInfo.allergyLabels?.length > 0 ? COLORS.danger : COLORS.textTertiary
-
-    const allergyLines = wrapText(ctx, allergyText, CONTENT_WIDTH_PX)
-    for (const line of allergyLines) {
-      ctx.fillText(line, MARGIN_PX, y)
-      y += mmToPx(5)
-    }
-
-    y += mmToPx(3)
-    y = drawSectionTitle(ctx, '慢性病史', y, COLORS.warning)
-
-    const chronicText = this.profile.basicInfo.chronicLabels?.length > 0
-      ? this.profile.basicInfo.chronicLabels.join('、')
-      : '无慢性病记录'
-
-    setFont(ctx, this.profile.basicInfo.chronicLabels?.length > 0 ? 13 : 12,
-      this.profile.basicInfo.chronicLabels?.length > 0 ? 'bold' : 'normal')
-    ctx.fillStyle = this.profile.basicInfo.chronicLabels?.length > 0 ? '#B45309' : COLORS.textTertiary
-
-    const chronicLines = wrapText(ctx, chronicText, CONTENT_WIDTH_PX)
-    for (const line of chronicLines) {
-      ctx.fillText(line, MARGIN_PX, y)
-      y += mmToPx(5)
-    }
-
-    y += mmToPx(5)
-    y = drawSectionTitle(ctx, '肝肾功能状态', y, COLORS.success)
-
-    const organBoxW = (CONTENT_WIDTH_PX - mmToPx(5)) / 2
-    const liverNormal = this.profile.basicInfo.liverFunction === 'normal'
-    const kidneyNormal = this.profile.basicInfo.kidneyFunction === 'normal'
-
-    ctx.fillStyle = liverNormal ? COLORS.successBg : COLORS.dangerBg
-    drawRoundedRect(ctx, MARGIN_PX, y, organBoxW, mmToPx(10), mmToPx(2))
-    ctx.fill()
-    setFont(ctx, 10, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    ctx.fillText('肝功能', MARGIN_PX + mmToPx(3), y + mmToPx(1.5))
-    setFont(ctx, 12, 'bold')
-    ctx.fillStyle = liverNormal ? '#047857' : COLORS.danger
-    ctx.fillText(this.profile.basicInfo.liverFunctionLabel, MARGIN_PX + mmToPx(3), y + mmToPx(4.5))
-
-    ctx.fillStyle = kidneyNormal ? COLORS.successBg : COLORS.dangerBg
-    drawRoundedRect(ctx, MARGIN_PX + organBoxW + mmToPx(5), y, organBoxW, mmToPx(10), mmToPx(2))
-    ctx.fill()
-    setFont(ctx, 10, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    ctx.fillText('肾功能', MARGIN_PX + organBoxW + mmToPx(8), y + mmToPx(1.5))
-    setFont(ctx, 12, 'bold')
-    ctx.fillStyle = kidneyNormal ? '#047857' : COLORS.danger
-    ctx.fillText(this.profile.basicInfo.kidneyFunctionLabel, MARGIN_PX + organBoxW + mmToPx(8), y + mmToPx(4.5))
-
-    this.cursorY = y + mmToPx(14)
-  }
-
-  _drawLabelValue(ctx, label, value, x, y) {
-    setFont(ctx, 11, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    ctx.fillText(label, x, y)
-    setFont(ctx, 12, 'bold')
-    ctx.fillStyle = COLORS.textPrimary
-    ctx.fillText(value || '-', x + mmToPx(14), y)
-  }
-
-  _renderCurrentMeds() {
-    this.ensureSpace(mmToPx(35))
-    let ctx = this.currentCtx
-    let y = this.cursorY
-
-    y = drawSectionTitle(ctx, '当前用药清单', y, COLORS.primary)
-
-    const meds = this.profile.currentMedications || []
-
-    if (meds.length === 0) {
-      setFont(ctx, 12, 'normal')
-      ctx.fillStyle = COLORS.textMuted
-      ctx.fillText('暂无当前用药记录', MARGIN_PX, y + mmToPx(4))
-      this.cursorY = y + mmToPx(18)
-      return
-    }
-
-    const headers = ['药品名称', '剂量', '频次', '类型']
-    const colWidths = [mmToPx(70), mmToPx(28), mmToPx(38), mmToPx(26)]
-    const rowH = mmToPx(8)
-
-    ctx.fillStyle = COLORS.borderLight
-    ctx.fillRect(MARGIN_PX, y, CONTENT_WIDTH_PX, rowH)
-
-    setFont(ctx, 11, 'bold')
-    ctx.fillStyle = COLORS.textSecondary
-    let hx = MARGIN_PX + mmToPx(3)
-    for (let i = 0; i < headers.length; i++) {
-      ctx.fillText(headers[i], hx, y + mmToPx(2.5))
-      hx += colWidths[i]
-    }
-    y += rowH
-
-    for (let i = 0; i < meds.length; i++) {
-      const med = meds[i]
-
-      if (this.ensureSpace(rowH + mmToPx(5))) {
-        y = this.cursorY
-        ctx = this.currentCtx
-        ctx.fillStyle = COLORS.borderLight
-        ctx.fillRect(MARGIN_PX, y, CONTENT_WIDTH_PX, rowH)
-        setFont(ctx, 11, 'bold')
-        ctx.fillStyle = COLORS.textSecondary
-        let hx2 = MARGIN_PX + mmToPx(3)
-        for (let hi = 0; hi < headers.length; hi++) {
-          ctx.fillText(headers[hi], hx2, y + mmToPx(2.5))
-          hx2 += colWidths[hi]
-        }
-        y += rowH
-      }
-
-      if (i % 2 === 1) {
-        ctx.fillStyle = COLORS.bgGray
-        ctx.fillRect(MARGIN_PX, y, CONTENT_WIDTH_PX, rowH)
-      }
-
-      setFont(ctx, 10.5, 'normal')
-      ctx.fillStyle = COLORS.textPrimary
-
-      let rx = MARGIN_PX + mmToPx(3)
-      const dosageText = `${med.dosage || '-'}${med.dosageUnit || ''}`
-      const typeText = med.isLongTerm ? '长期用药' : (med.duration || '短期')
-      const values = [med.name, dosageText, med.frequency || '-', typeText]
-
-      for (let vi = 0; vi < values.length; vi++) {
-        const maxChars = Math.floor(colWidths[vi] / 7)
-        const displayText = values[vi]?.length > maxChars
-          ? values[vi].slice(0, maxChars - 1) + '…'
-          : (values[vi] || '-')
-        ctx.fillText(displayText, rx, y + mmToPx(2.5))
-        rx += colWidths[vi]
-      }
-
-      y += rowH
-    }
-
-    this.cursorY = y + mmToPx(6)
-  }
-
-  _renderMedicalRecords() {
-    this.ensureSpace(mmToPx(30))
-    const ctx = this.currentCtx
-    let y = this.cursorY
-
-    y = drawSectionTitle(ctx, '近期就诊记录', y, COLORS.purple)
-
-    const records = this.profile.medicalRecords || []
-    if (records.length === 0) {
-      setFont(ctx, 12, 'normal')
-      ctx.fillStyle = COLORS.textMuted
-      ctx.fillText('暂无就诊记录', MARGIN_PX, y + mmToPx(4))
-      this.cursorY = y + mmToPx(18)
-      return
-    }
-
-    for (let i = 0; i < records.length; i++) {
-      const record = records[i]
-
-      this.ensureSpace(mmToPx(45))
-      const c = this.currentCtx
-
-      c.fillStyle = COLORS.purpleLight
-      c.fillRect(MARGIN_PX, y, CONTENT_WIDTH_PX, mmToPx(0.8))
-      y += mmToPx(4)
-
-      setFont(c, 13, 'bold')
-      c.fillStyle = COLORS.purple
-      c.fillText(`${record.visitDate || '-'}  ${record.hospital || '-'}  ${record.department || ''}`, MARGIN_PX, y)
-      y += mmToPx(7)
-
-      setFont(c, 12, 'bold')
-      c.fillStyle = COLORS.textPrimary
-      c.fillText(`诊断：${record.diagnosis || '-'}`, MARGIN_PX, y)
-      y += mmToPx(6)
-
-      setFont(c, 11, 'normal')
-      c.fillStyle = COLORS.textSecondary
-      const ccLines = wrapText(c, `主诉：${record.chiefComplaint || '-'}`, CONTENT_WIDTH_PX)
-      for (const line of ccLines) {
-        c.fillText(line, MARGIN_PX, y)
-        y += mmToPx(5)
-      }
-
-      if (record.prescribedMedicines?.length > 0) {
-        this.ensureSpace(mmToPx(20))
-        const c2 = this.currentCtx
-        setFont(c2, 11, 'bold')
-        c2.fillStyle = COLORS.primary
-        c2.fillText('处方用药：', MARGIN_PX, y + mmToPx(2))
-        y += mmToPx(6)
-
-        setFont(c2, 10, 'normal')
-        c2.fillStyle = COLORS.textSecondary
-        for (let pi = 0; pi < record.prescribedMedicines.length; pi++) {
-          const pm = record.prescribedMedicines[pi]
-          const mt = `${pi + 1}. ${pm.medicineName} ${pm.dosage || ''}${pm.dosageUnit || ''} ${pm.frequency || ''} ${pm.duration || ''}`.trim()
-          const mtLines = wrapText(c2, mt, CONTENT_WIDTH_PX - mmToPx(5))
-          for (const line of mtLines) {
-            this.ensureSpace(mmToPx(6))
-            this.currentCtx.fillText(line, MARGIN_PX + mmToPx(3), y)
-            y += mmToPx(4.5)
-          }
-        }
-      }
-
-      if (record.notes) {
-        this.ensureSpace(mmToPx(12))
-        const c3 = this.currentCtx
-        setFont(c3, 10, 'normal')
-        c3.fillStyle = COLORS.textTertiary
-        const noteLines = wrapText(c3, `医嘱：${record.notes}`, CONTENT_WIDTH_PX)
-        for (const line of noteLines) {
-          c3.fillText(line, MARGIN_PX, y)
-          y += mmToPx(4.5)
-        }
-      }
-
-      y += mmToPx(5)
-    }
-
-    this.cursorY = y
-  }
-
-  _renderAdherence() {
-    this.ensureSpace(mmToPx(50))
-    const ctx = this.currentCtx
-    let y = this.cursorY
-
-    y = drawSectionTitle(ctx, '用药依从性统计', y, COLORS.cyan)
-
-    const adherence = this.profile.adherence || {}
-    const statBoxW = (CONTENT_WIDTH_PX - mmToPx(15)) / 4
-    const stats = [
-      ['统计天数', `${adherence.totalDays || 0} 天`],
-      ['预期服药', adherence.totalExpectedDoses || 0],
-      ['实际服药', adherence.totalActualDoses || 0],
-      ['记录天数', `${adherence.daysWithDosing || 0} 天`]
-    ]
-
-    for (let i = 0; i < stats.length; i++) {
-      const bx = MARGIN_PX + i * (statBoxW + mmToPx(5))
-      ctx.fillStyle = COLORS.bgGray
-      drawRoundedRect(ctx, bx, y, statBoxW, mmToPx(12), mmToPx(2))
-      ctx.fill()
-
-      setFont(ctx, 10, 'normal')
-      ctx.fillStyle = COLORS.textTertiary
-      ctx.textAlign = 'center'
-      ctx.fillText(stats[i][0], bx + statBoxW / 2, y + mmToPx(2))
-      setFont(ctx, 16, 'bold')
-      ctx.fillStyle = COLORS.cyan
-      ctx.fillText(String(stats[i][1]), bx + statBoxW / 2, y + mmToPx(5.5))
-      ctx.textAlign = 'left'
-    }
-    y += mmToPx(16)
-
-    const rate = adherence.adherenceRate || 0
-    setFont(ctx, 13, 'bold')
-    ctx.fillStyle = COLORS.textPrimary
-    ctx.fillText('依从性评分：', MARGIN_PX, y + mmToPx(2))
-    setFont(ctx, 24, 'bold')
-    ctx.fillStyle = adherence.levelColor || COLORS.danger
-    ctx.fillText(`${rate}%`, MARGIN_PX + mmToPx(30), y - mmToPx(0.5))
-    setFont(ctx, 11, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    ctx.fillText(`· ${adherence.levelText || ''}`, MARGIN_PX + mmToPx(55), y + mmToPx(3.5))
-    y += mmToPx(22)
-
-    this.ensureSpace(mmToPx(70))
-    const chartH = mmToPx(65)
-    const chartCanvas = drawAdherenceChartCanvas(adherence, CONTENT_WIDTH_PX, chartH)
-    this.currentCtx.drawImage(chartCanvas, MARGIN_PX, y, CONTENT_WIDTH_PX, chartH)
-    y += chartH + mmToPx(6)
-
-    this.cursorY = y
-  }
-
-  _renderSafetyAssessment() {
-    this.ensureSpace(mmToPx(55))
-    const ctx = this.currentCtx
-    let y = this.cursorY
-
-    y = drawSectionTitle(ctx, '药物安全评估摘要', y, COLORS.rose)
-
-    const safety = this.profile.safetyAssessment?.summary
-    if (!safety) {
-      this.cursorY = y + mmToPx(10)
-      return
-    }
-
-    const riskColor = safety.overallRiskColor || COLORS.success
-
-    ctx.fillStyle = rgba(riskColor, 0.1)
-    ctx.strokeStyle = riskColor
-    ctx.lineWidth = 1.5
-    drawRoundedRect(ctx, MARGIN_PX, y, CONTENT_WIDTH_PX, mmToPx(20), mmToPx(2))
-    ctx.fill()
-    ctx.stroke()
-
-    setFont(ctx, 13, 'bold')
-    ctx.fillStyle = riskColor
-    ctx.fillText(`综合风险等级：${safety.overallRiskText}`, MARGIN_PX + mmToPx(3), y + mmToPx(3.5))
-
-    setFont(ctx, 10.5, 'normal')
-    ctx.fillStyle = COLORS.textSecondary
-    const descLines = wrapText(ctx, safety.overallRiskDesc || '', CONTENT_WIDTH_PX - mmToPx(6))
-    for (let i = 0; i < descLines.length; i++) {
-      ctx.fillText(descLines[i], MARGIN_PX + mmToPx(3), y + mmToPx(9) + i * mmToPx(4.5))
-    }
-    y += mmToPx(20) + Math.max(0, descLines.length - 1) * mmToPx(4.5) + mmToPx(4)
-
-    const riskBoxW = (CONTENT_WIDTH_PX - mmToPx(20)) / 5
-    const riskItems = [
-      ['高风险', safety.highCount || 0, COLORS.danger],
-      ['中风险', safety.mediumCount || 0, COLORS.warning],
-      ['低风险', safety.lowCount || 0, COLORS.primary],
-      ['过敏项', safety.allergyRisk || 0, '#EC4899'],
-      ['慢性病', safety.chronicCount || 0, COLORS.purple]
-    ]
-
-    for (let i = 0; i < riskItems.length; i++) {
-      const [label, count, color] = riskItems[i]
-      const rx = MARGIN_PX + i * (riskBoxW + mmToPx(5))
-
-      ctx.fillStyle = rgba(color, 0.1)
-      drawRoundedRect(ctx, rx, y, riskBoxW, mmToPx(14), mmToPx(2))
-      ctx.fill()
-
-      setFont(ctx, 10, 'normal')
-      ctx.fillStyle = COLORS.textTertiary
-      ctx.textAlign = 'center'
-      ctx.fillText(label, rx + riskBoxW / 2, y + mmToPx(2))
-      setFont(ctx, 18, 'bold')
-      ctx.fillStyle = color
-      ctx.fillText(String(count), rx + riskBoxW / 2, y + mmToPx(6))
-      ctx.textAlign = 'left'
-    }
-    y += mmToPx(18)
-
-    const warnings = this.profile.safetyAssessment?.warnings || []
-    if (warnings.length > 0) {
-      y += mmToPx(4)
-      this.ensureSpace(mmToPx(25))
-      const c = this.currentCtx
-
-      setFont(c, 12, 'bold')
-      c.fillStyle = COLORS.textSecondary
-      c.fillText('风险明细：', MARGIN_PX, y)
-      y += mmToPx(7)
-
-      const toShow = warnings.slice(0, 10)
-      for (const w of toShow) {
-        this.ensureSpace(mmToPx(18))
-        const wc = this.currentCtx
-
-        const levelColor = w.level === 'high' ? COLORS.danger : (w.level === 'medium' ? COLORS.warning : COLORS.primary)
-
-        wc.fillStyle = rgba(levelColor, 0.08)
-        drawRoundedRect(wc, MARGIN_PX, y, CONTENT_WIDTH_PX, mmToPx(13), mmToPx(2))
-        wc.fill()
-
-        setFont(wc, 11, 'bold')
-        wc.fillStyle = levelColor
-        const levelLabel = w.level === 'high' ? '高' : (w.level === 'medium' ? '中' : '低')
-        wc.fillText(`[${levelLabel}风险] ${w.medicine} - ${w.title}`, MARGIN_PX + mmToPx(3), y + mmToPx(2.5))
-        y += mmToPx(6.5)
-
-        setFont(wc, 10, 'normal')
-        wc.fillStyle = COLORS.textSecondary
-        const descLines = wrapText(wc, w.description || '', CONTENT_WIDTH_PX - mmToPx(6))
-        for (const line of descLines) {
-          this.ensureSpace(mmToPx(5))
-          this.currentCtx.fillText(line, MARGIN_PX + mmToPx(3), y)
-          y += mmToPx(4.5)
-        }
-        y += mmToPx(2)
-      }
-    }
-
-    this.cursorY = y
-  }
-
-  async _renderQRCodeSection() {
-    this.ensureSpace(mmToPx(45))
-    const ctx = this.currentCtx
-    let y = this.cursorY
-
-    y = drawSectionTitle(ctx, '扫码查看电子档案', y, COLORS.primary)
-
-    const qrPayload = generateQRCodePayload(this.profile.basicInfo.id)
-    const qrSize = mmToPx(50)
-
+async function renderHTMLToCanvas(htmlString, qrPayload) {
+  const wrapper = document.createElement('div')
+  wrapper.style.position = 'absolute'
+  wrapper.style.left = '-99999px'
+  wrapper.style.top = '0'
+  wrapper.style.zIndex = '-1'
+  wrapper.innerHTML = htmlString
+  document.body.appendChild(wrapper)
+
+  try {
     if (qrPayload) {
-      const qrImg = await generateQRCodeImage(qrPayload, qrSize)
-      if (qrImg) {
-        ctx.drawImage(qrImg, MARGIN_PX, y, qrSize, qrSize)
-
-        const qrTextX = MARGIN_PX + qrSize + mmToPx(8)
-        const qrTextW = CONTENT_WIDTH_PX - qrSize - mmToPx(8)
-
-        setFont(ctx, 11, 'normal')
-        ctx.fillStyle = COLORS.textTertiary
-        const desc = '医生或急救人员可使用手机扫描左侧二维码，快速获取患者的关键健康信息（过敏史、禁忌、当前用药等）。建议将此页打印随身携带或存入手机相册。'
-        const descLines = wrapText(ctx, desc, qrTextW)
-        for (const line of descLines) {
-          ctx.fillText(line, qrTextX, y + mmToPx(5))
-          y += mmToPx(5)
-        }
-
-        setFont(ctx, 10, 'normal')
-        ctx.fillStyle = COLORS.textMuted
-        ctx.fillText(`二维码生成时间：${formatDate(new Date().toISOString())}`, qrTextX, y + qrSize - mmToPx(18))
+      const qrDataURL = await generateQRCodeDataURL(qrPayload, 300)
+      const qrImg = wrapper.querySelector('#report-qr')
+      if (qrImg && qrDataURL) {
+        qrImg.src = qrDataURL
+        qrImg.style.display = 'block'
       }
     }
 
-    this.cursorY = y + qrSize + mmToPx(5)
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    const reportEl = wrapper.querySelector('#health-report')
+    if (!reportEl) throw new Error('报告元素未找到')
+
+    const canvas = await html2canvas(reportEl, {
+      scale: 2,
+      useCORS: true,
+      allowTaint: true,
+      backgroundColor: '#FFFFFF',
+      logging: false
+    })
+
+    return canvas
+  } finally {
+    document.body.removeChild(wrapper)
   }
+}
+
+function splitCanvasToPages(canvas, pageWidthPx, pageHeightPx) {
+  const pages = []
+  const totalHeight = canvas.height
+  const totalWidth = canvas.width
+  let currentY = 0
+
+  while (currentY < totalHeight) {
+    const pageCanvas = document.createElement('canvas')
+    pageCanvas.width = totalWidth
+    pageCanvas.height = Math.min(pageHeightPx, totalHeight - currentY)
+
+    const ctx = pageCanvas.getContext('2d')
+    ctx.fillStyle = '#FFFFFF'
+    ctx.fillRect(0, 0, totalWidth, pageCanvas.height)
+    ctx.drawImage(
+      canvas,
+      0, currentY,
+      totalWidth, pageCanvas.height,
+      0, 0,
+      totalWidth, pageCanvas.height
+    )
+
+    pages.push(pageCanvas)
+    currentY += pageHeightPx
+  }
+
+  return pages
 }
 
 export async function generateHealthReportPDF(profile, options = {}) {
   if (!profile || !profile.basicInfo) return null
 
   try {
-    const renderer = new PDFRenderer(profile, options)
-    renderer.init()
-    const pages = await renderer.render()
+    const { html, qrPayload } = buildReportHTML(profile, options)
+    const canvas = await renderHTMLToCanvas(html, qrPayload)
 
-    const doc = new jsPDF({
+    const pageWidthPx = PIXEL_WIDTH
+    const pageHeightPx = canvas.width * (A4_HEIGHT / A4_WIDTH)
+    const pageCanvases = splitCanvasToPages(canvas, pageWidthPx, pageHeightPx)
+
+    const pdf = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',
       format: 'a4',
       compress: true
     })
 
-    for (let i = 0; i < pages.length; i++) {
-      if (i > 0) doc.addPage()
-      const imgData = pages[i].toDataURL('image/jpeg', 0.92)
-      doc.addImage(imgData, 'JPEG', 0, 0, PAGE_WIDTH_MM, PAGE_HEIGHT_MM, undefined, 'FAST')
+    for (let i = 0; i < pageCanvases.length; i++) {
+      const pageCanvas = pageCanvases[i]
+      const imgData = pageCanvas.toDataURL('image/jpeg', 0.95)
+
+      if (i > 0) {
+        pdf.addPage()
+      }
+
+      const imgWidth = A4_WIDTH
+      const imgHeight = (pageCanvas.height / pageCanvas.width) * A4_WIDTH
+      pdf.addImage(imgData, 'JPEG', 0, 0, imgWidth, imgHeight)
+
+      const pageNum = i + 1
+      const totalPages = pageCanvases.length
+      pdf.setFontSize(8)
+      pdf.setTextColor(156, 163, 175)
+      pdf.text(`第 ${pageNum} / ${totalPages} 页`, A4_WIDTH - 15, A4_HEIGHT - 8)
     }
 
     const fileName = `健康档案_${profile.basicInfo.name}_${formatDate(new Date().toISOString())}.pdf`
-    doc.save(fileName)
+    pdf.save(fileName)
     return fileName
   } catch (err) {
-    console.error('生成PDF失败:', err)
+    console.error('生成PDF报告失败:', err)
     throw err
   }
 }
 
-// ========== 急诊卡 ==========
-
-async function renderEmergencyCard(memberId) {
-  const cardData = generateEmergencyCardData(memberId)
-  if (!cardData) return null
-
-  const cardW = mmToPx(90)
-  const cardH = mmToPx(58)
-
-  const { canvas, ctx } = createHiDPICanvas(cardW, cardH)
-  const primaryColor = cardData.color || COLORS.primary
-
-  ctx.fillStyle = primaryColor
-  ctx.fillRect(0, 0, cardW, cardH)
-
-  ctx.fillStyle = COLORS.white
-  ctx.fillRect(mmToPx(3), mmToPx(3), cardW - mmToPx(6), cardH - mmToPx(6))
-
-  ctx.fillStyle = primaryColor
-  ctx.fillRect(mmToPx(3), mmToPx(3), cardW - mmToPx(6), mmToPx(9))
-
-  ctx.fillStyle = COLORS.white
-  setFont(ctx, 12, 'bold')
-  ctx.textAlign = 'center'
-  ctx.fillText('急诊医疗信息卡 / EMERGENCY CARD', cardW / 2, mmToPx(5.5))
-  ctx.textAlign = 'left'
-
-  let y = mmToPx(15)
-
-  setFont(ctx, 14, 'bold')
-  ctx.fillStyle = COLORS.textPrimary
-  ctx.fillText(cardData.name, mmToPx(5), y)
-
-  setFont(ctx, 10, 'normal')
-  ctx.fillStyle = COLORS.textTertiary
-  ctx.fillText(`${cardData.relation || ''}  ${cardData.ageText || ''}`, mmToPx(38), y + mmToPx(0.5))
-
-  y += mmToPx(7)
-
-  if (cardData.birthDate) {
-    setFont(ctx, 9, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    ctx.fillText(`生日: ${cardData.birthDate}`, mmToPx(5), y)
-  }
-  if (cardData.weight) {
-    ctx.fillText(`体重: ${cardData.weight}kg`, mmToPx(38), y)
-  }
-
-  y += mmToPx(6)
+function buildEmergencyCardHTML(cardData) {
+  if (!cardData) return ''
 
   const hasAllergies = cardData.allergies?.length > 0
-  if (hasAllergies) {
-    ctx.fillStyle = COLORS.dangerLight
-    drawRoundedRect(ctx, mmToPx(4), y - mmToPx(2), cardW - mmToPx(8), mmToPx(10), mmToPx(2))
-    ctx.fill()
-
-    setFont(ctx, 10, 'bold')
-    ctx.fillStyle = COLORS.danger
-    const allergyLabel = '⚠ 过敏：' + (cardData.allergies.join('、') || '无')
-    const allergyLines = wrapText(ctx, allergyLabel, cardW - mmToPx(12))
-    for (let i = 0; i < allergyLines.length; i++) {
-      ctx.fillText(allergyLines[i], mmToPx(6), y + i * mmToPx(4.5))
-    }
-    y += allergyLines.length * mmToPx(4.5) + mmToPx(2)
-  } else {
-    ctx.fillStyle = COLORS.successLight
-    drawRoundedRect(ctx, mmToPx(4), y - mmToPx(2), cardW - mmToPx(8), mmToPx(8), mmToPx(2))
-    ctx.fill()
-
-    setFont(ctx, 10, 'bold')
-    ctx.fillStyle = '#047857'
-    ctx.fillText('✓ 无已知过敏史', mmToPx(6), y)
-    y += mmToPx(6)
-  }
-
-  if (cardData.chronicDiseases?.length > 0) {
-    setFont(ctx, 10, 'bold')
-    ctx.fillStyle = '#B45309'
-    const chronicTxt = `慢病：${cardData.chronicDiseases.join('、')}`
-    const chronicLines = wrapText(ctx, chronicTxt, cardW - mmToPx(12))
-    for (const line of chronicLines) {
-      ctx.fillText(line, mmToPx(5), y)
-      y += mmToPx(4.5)
-    }
-  }
-
-  if (cardData.liverFunction !== '正常' || cardData.kidneyFunction !== '正常') {
-    setFont(ctx, 9, 'normal')
-    ctx.fillStyle = COLORS.textTertiary
-    const parts = []
-    if (cardData.liverFunction !== '正常') parts.push(`肝功:${cardData.liverFunction}`)
-    if (cardData.kidneyFunction !== '正常') parts.push(`肾功:${cardData.kidneyFunction}`)
-    ctx.fillText(parts.join('  '), mmToPx(5), y + mmToPx(0.5))
-    y += mmToPx(5)
-  }
-
-  y += mmToPx(1)
-  ctx.strokeStyle = primaryColor
-  ctx.lineWidth = 0.8
-  ctx.setLineDash([2, 2])
-  ctx.beginPath()
-  ctx.moveTo(mmToPx(4), y)
-  ctx.lineTo(cardW - mmToPx(4), y)
-  ctx.stroke()
-  ctx.setLineDash([])
-  y += mmToPx(4)
-
-  setFont(ctx, 10, 'bold')
-  ctx.fillStyle = primaryColor
-  ctx.fillText('当前用药 / Current Meds:', mmToPx(5), y)
-  y += mmToPx(5.5)
-
   const meds = cardData.currentMedications || []
-  const maxMeds = Math.min(meds.length, 3)
-  setFont(ctx, 9, 'normal')
-  ctx.fillStyle = COLORS.textSecondary
 
-  for (let i = 0; i < maxMeds; i++) {
-    const med = meds[i]
-    const medText = `${i + 1}. ${med.name} ${med.dosage || ''}${med.dosageUnit || ''} ${med.frequency || ''}`.trim()
-    const medLines = wrapText(ctx, medText, cardW - mmToPx(28))
-    for (const line of medLines) {
-      ctx.fillText(line, mmToPx(6), y)
-      y += mmToPx(4)
-    }
-  }
-
-  if (meds.length > 3) {
-    setFont(ctx, 9, 'normal')
-    ctx.fillStyle = COLORS.textMuted
-    ctx.fillText(`...等共 ${meds.length} 种药物`, mmToPx(6), y)
-    y += mmToPx(4)
-  }
-
+  let medsHTML = ''
   if (meds.length === 0) {
-    setFont(ctx, 9, 'normal')
-    ctx.fillStyle = COLORS.textMuted
-    ctx.fillText('暂无用药记录', mmToPx(6), y)
+    medsHTML = '<div style="font-size: 9px; color: #9CA3AF;">暂无用药记录</div>'
+  } else {
+    medsHTML = meds.slice(0, 3).map((m, i) => `
+      <div style="font-size: 9px; color: #374151; line-height: 1.4;">
+        ${i + 1}. ${m.name} ${m.dosage || ''}${m.dosageUnit || ''} ${m.frequency || ''}
+      </div>
+    `).join('')
   }
 
-  const qrPayload = generateQRCodePayload(memberId)
-  const qrSize = mmToPx(18)
-  const qrX = cardW - mmToPx(5) - qrSize
-  const qrY = cardH - mmToPx(5) - qrSize
+  const moreMeds = meds.length > 3
+    ? `<div style="font-size: 8px; color: #9CA3AF; margin-top: 2px;">...等共 ${meds.length} 种药物</div>`
+    : ''
 
-  if (qrPayload) {
-    const qrImg = await generateQRCodeImage(qrPayload, qrSize)
-    if (qrImg) {
-      ctx.fillStyle = COLORS.white
-      ctx.fillRect(qrX - 1, qrY - 1, qrSize + 2, qrSize + 2)
-      ctx.drawImage(qrImg, qrX, qrY, qrSize, qrSize)
-    }
-  }
+  const html = `
+    <div id="emergency-card" style="width: 340px; height: 220px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: white; position: relative; box-sizing: border-box; border: 3px solid ${cardData.color}; border-radius: 8px; overflow: hidden;">
+      <div style="background: ${cardData.color}; color: white; padding: 6px 10px;">
+        <div style="font-size: 12px; font-weight: 700; text-align: center;">急诊医疗信息卡 / EMERGENCY CARD</div>
+      </div>
 
-  setFont(ctx, 8, 'normal')
-  ctx.fillStyle = COLORS.textMuted
-  ctx.fillText(`生成: ${formatDate(new Date().toISOString())}`, mmToPx(5), cardH - mmToPx(5))
+      <div style="padding: 10px 12px;">
+        <div style="display: flex; align-items: flex-start; gap: 10px;">
+          <div style="width: 36px; height: 36px; border-radius: 8px; background: ${cardData.color}20; display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink: 0;">
+            ${cardData.avatar || '👤'}
+          </div>
+          <div style="flex: 1; min-width: 0;">
+            <div style="font-size: 16px; font-weight: 700; color: #111827;">${cardData.name}</div>
+            <div style="font-size: 10px; color: #6B7280; margin-top: 1px;">${cardData.relation || ''}  ${cardData.ageText || ''}</div>
+            <div style="font-size: 9px; color: #9CA3AF; margin-top: 2px;">
+              ${cardData.birthDate ? '生日: ' + cardData.birthDate : ''}
+              ${cardData.weight ? '  体重: ' + cardData.weight + 'kg' : ''}
+            </div>
+          </div>
+        </div>
 
-  return canvas
+        <div style="margin-top: 8px; padding: 6px 8px; border-radius: 6px; background: ${hasAllergies ? '#FEF2F2' : '#ECFDF5'};">
+          <div style="font-size: 10px; font-weight: 700; color: ${hasAllergies ? '#DC2626' : '#059669'};">
+            ${hasAllergies ? '⚠ 过敏：' + cardData.allergies.join('、') : '✓ 无已知过敏史'}
+          </div>
+        </div>
+
+        ${cardData.chronicDiseases?.length > 0 ? `
+          <div style="margin-top: 4px; font-size: 10px; font-weight: 600; color: #B45309;">
+            慢病：${cardData.chronicDiseases.join('、')}
+          </div>
+        ` : ''}
+
+        ${cardData.liverFunction !== '正常' || cardData.kidneyFunction !== '正常' ? `
+          <div style="margin-top: 3px; font-size: 9px; color: #6B7280;">
+            ${cardData.liverFunction !== '正常' ? '肝功:' + cardData.liverFunction : ''}
+            ${cardData.kidneyFunction !== '正常' ? '  肾功:' + cardData.kidneyFunction : ''}
+          </div>
+        ` : ''}
+
+        <div style="margin-top: 6px; padding-top: 6px; border-top: 1px dashed #D1D5DB;">
+          <div style="font-size: 10px; font-weight: 700; color: ${cardData.color}; margin-bottom: 4px;">当前用药 / Current Meds:</div>
+          ${medsHTML}
+          ${moreMeds}
+        </div>
+      </div>
+
+      <div style="position: absolute; right: 10px; bottom: 10px; width: 50px; height: 50px; background: white; border: 1px solid #E5E7EB; border-radius: 4px; padding: 3px;">
+        <img id="card-qr" src="" alt="" style="width: 100%; height: 100%; object-fit: contain; display: none;" />
+      </div>
+
+      <div style="position: absolute; left: 10px; bottom: 8px; font-size: 8px; color: #9CA3AF;">
+        生成: ${formatDate(new Date().toISOString())}
+      </div>
+    </div>
+  `
+
+  return html
 }
 
 export async function generateEmergencyCardPDF(memberId) {
+  const cardData = generateEmergencyCardData(memberId)
+  if (!cardData) return null
+
   try {
-    const canvas = await renderEmergencyCard(memberId)
-    if (!canvas) return null
+    const qrPayload = generateQRCodePayload(memberId)
+    const html = buildEmergencyCardHTML(cardData)
 
-    const cardData = generateEmergencyCardData(memberId)
+    const wrapper = document.createElement('div')
+    wrapper.style.position = 'absolute'
+    wrapper.style.left = '-99999px'
+    wrapper.style.top = '0'
+    wrapper.style.zIndex = '-1'
+    wrapper.innerHTML = html
+    document.body.appendChild(wrapper)
 
-    const doc = new jsPDF({
-      orientation: 'landscape',
-      unit: 'mm',
-      format: [90, 58],
-      compress: true
-    })
+    try {
+      if (qrPayload) {
+        const qrDataURL = await generateQRCodeDataURL(qrPayload, 200)
+        const qrImg = wrapper.querySelector('#card-qr')
+        if (qrImg && qrDataURL) {
+          qrImg.src = qrDataURL
+          qrImg.style.display = 'block'
+        }
+      }
 
-    const imgData = canvas.toDataURL('image/jpeg', 0.95)
-    doc.addImage(imgData, 'JPEG', 0, 0, 90, 58, undefined, 'FAST')
+      await new Promise(resolve => setTimeout(resolve, 80))
 
-    const fileName = `急诊卡_${cardData.name}_${formatDate(new Date().toISOString())}.pdf`
-    doc.save(fileName)
-    return fileName
+      const cardEl = wrapper.querySelector('#emergency-card')
+      const canvas = await html2canvas(cardEl, {
+        scale: 4,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: '#FFFFFF',
+        logging: false
+      })
+
+      const cardWidthMm = 90
+      const cardHeightMm = 58
+
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: [cardWidthMm, cardHeightMm],
+        compress: true
+      })
+
+      const imgData = canvas.toDataURL('image/png')
+      pdf.addImage(imgData, 'PNG', 0, 0, cardWidthMm, cardHeightMm)
+
+      const fileName = `急诊卡_${cardData.name}_${formatDate(new Date().toISOString())}.pdf`
+      pdf.save(fileName)
+      return fileName
+    } finally {
+      document.body.removeChild(wrapper)
+    }
   } catch (err) {
     console.error('生成急诊卡失败:', err)
     throw err
