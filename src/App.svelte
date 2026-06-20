@@ -6,6 +6,7 @@
   import Records from './lib/pages/Records.svelte'
   import Family from './lib/pages/Family.svelte'
   import Inventory from './lib/pages/Inventory.svelte'
+  import PurchaseList from './lib/pages/PurchaseList.svelte'
   import Settings from './lib/pages/Settings.svelte'
 
   let currentRoute = 'dashboard'
@@ -30,6 +31,8 @@
       <Family />
     {:else if currentRoute === 'inventory'}
       <Inventory />
+    {:else if currentRoute === 'purchase-list'}
+      <PurchaseList />
     {:else if currentRoute === 'settings'}
       <Settings />
     {/if}
