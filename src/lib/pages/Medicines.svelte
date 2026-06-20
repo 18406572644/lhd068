@@ -2,6 +2,8 @@
   import Icon from '../components/Icon.svelte'
   import MedicineCard from '../components/MedicineCard.svelte'
   import Modal from '../components/Modal.svelte'
+  import SearchBox from '../components/SearchBox.svelte'
+  import AdvancedSearch from '../components/AdvancedSearch.svelte'
   import {
     medicines,
     addMedicine,
@@ -12,6 +14,7 @@
     markAllExpired
   } from '../stores/medicines.js'
   import { familyMembers } from '../stores/familyMembers.js'
+  import { addSearchHistory } from '../stores/search.js'
   import {
     MEDICINE_CATEGORIES,
     CATEGORY_LABELS,
@@ -27,11 +30,23 @@
   } from '../utils/helpers.js'
 
   let searchQuery = ''
-  let filterCategory = 'all'
   let filterStatus = 'all'
   let filterLocation = 'all'
-  let filterMember = 'all'
   let sortBy = 'expiry'
+
+  let advancedOpen = false
+  let advancedSearchRef = null
+
+  let expiryDaysMin = null
+  let expiryDaysMax = null
+  let quantityMin = null
+  let quantityMax = null
+  let selectedCategories = []
+  let selectedMembers = []
+  let createdAfter = ''
+  let createdBefore = ''
+  let updatedAfter = ''
+  let updatedBefore = ''
 
   let showFormModal = false
   let showBatchModal = false
@@ -76,12 +91,21 @@
   }
 
   $: filteredMedicines = $medicines.filter((m) => {
-    if (searchQuery && !m.name.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !m.manufacturer?.toLowerCase().includes(searchQuery.toLowerCase()) &&
-        !m.barcode?.includes(searchQuery)) {
-      return false
+    if (searchQuery && searchQuery.trim()) {
+      const q = searchQuery.trim().toLowerCase()
+      const matchName = m.name.toLowerCase().includes(q)
+      const matchManufacturer = m.manufacturer?.toLowerCase().includes(q)
+      const matchBarcode = m.barcode?.includes(q)
+      const matchIndications = m.indications?.toLowerCase().includes(q)
+      if (!matchName && !matchManufacturer && !matchBarcode && !matchIndications) {
+        return false
+      }
     }
-    if (filterCategory !== 'all' && m.category !== filterCategory) return false
+
+    if (selectedCategories.length > 0) {
+      if (!selectedCategories.includes(m.category)) return false
+    }
+
     if (filterStatus !== 'all') {
       const status = getExpiryStatus(m.expiryDate)
       if (filterStatus === 'expired' && status !== EXPIRY_STATUS.EXPIRED) return false
@@ -89,8 +113,41 @@
       if (filterStatus === 'normal' && status !== EXPIRY_STATUS.NORMAL) return false
       if (filterStatus === 'marked' && !m.markedExpired) return false
     }
+
     if (filterLocation !== 'all' && !m.location?.includes(filterLocation)) return false
-    if (filterMember !== 'all' && !m.familyMemberIds?.includes(filterMember)) return false
+
+    if (selectedMembers.length > 0) {
+      if (!m.familyMemberIds || m.familyMemberIds.length === 0) return false
+      for (const mid of selectedMembers) {
+        if (!m.familyMemberIds.includes(mid)) return false
+      }
+    }
+
+    if (expiryDaysMin != null || expiryDaysMax != null) {
+      const days = getDaysUntilExpiry(m.expiryDate)
+      if (expiryDaysMin != null && days < expiryDaysMin) return false
+      if (expiryDaysMax != null && days > expiryDaysMax) return false
+    }
+
+    if (quantityMin != null || quantityMax != null) {
+      const qty = m.quantity ?? 0
+      if (quantityMin != null && qty < quantityMin) return false
+      if (quantityMax != null && qty > quantityMax) return false
+    }
+
+    if (createdAfter) {
+      if (!m.createdAt || new Date(m.createdAt) < new Date(createdAfter)) return false
+    }
+    if (createdBefore) {
+      if (!m.createdAt || new Date(m.createdAt) > new Date(createdBefore + 'T23:59:59')) return false
+    }
+    if (updatedAfter) {
+      if (!m.updatedAt || new Date(m.updatedAt) < new Date(updatedAfter)) return false
+    }
+    if (updatedBefore) {
+      if (!m.updatedAt || new Date(m.updatedAt) > new Date(updatedBefore + 'T23:59:59')) return false
+    }
+
     return true
   }).sort((a, b) => {
     if (sortBy === 'expiry') {
@@ -104,6 +161,65 @@
     }
     return 0
   })
+
+  function handleSearch(e) {
+    const query = e.detail?.query ?? ''
+    searchQuery = query
+  }
+
+  function handleClearSearch() {
+    searchQuery = ''
+  }
+
+  function handleToggleAdvanced() {
+    advancedOpen = !advancedOpen
+  }
+
+  function handleAdvancedChange(e) {
+    const f = e.detail
+    expiryDaysMin = f.expiryDaysMin
+    expiryDaysMax = f.expiryDaysMax
+    quantityMin = f.quantityMin
+    quantityMax = f.quantityMax
+    selectedCategories = f.categories || []
+    selectedMembers = f.familyMemberIds || []
+    createdAfter = f.createdAfter
+    createdBefore = f.createdBefore
+    updatedAfter = f.updatedAfter
+    updatedBefore = f.updatedBefore
+  }
+
+  function handleApplyQuickFilter(e) {
+    const filter = e.detail
+    const f = filter.filters || filter
+
+    expiryDaysMin = f.expiryDaysMin != null ? f.expiryDaysMin : null
+    expiryDaysMax = f.expiryDaysMax != null ? f.expiryDaysMax : null
+    quantityMin = f.quantityMin != null ? f.quantityMin : null
+    quantityMax = f.quantityMax != null ? f.quantityMax : null
+    selectedCategories = f.categories ? [...f.categories] : []
+    selectedMembers = f.familyMemberIds ? [...f.familyMemberIds] : []
+    createdAfter = f.createdAfter || ''
+    createdBefore = f.createdBefore || ''
+    updatedAfter = f.updatedAfter || ''
+    updatedBefore = f.updatedBefore || ''
+
+    if (advancedSearchRef) {
+      advancedSearchRef.expiryDaysMin = expiryDaysMin
+      advancedSearchRef.expiryDaysMax = expiryDaysMax
+      advancedSearchRef.quantityMin = quantityMin
+      advancedSearchRef.quantityMax = quantityMax
+      advancedSearchRef.selectedCategories = selectedCategories
+      advancedSearchRef.selectedMembers = selectedMembers
+      advancedSearchRef.createdAfter = createdAfter
+      advancedSearchRef.createdBefore = createdBefore
+      advancedSearchRef.updatedAfter = updatedAfter
+      advancedSearchRef.updatedBefore = updatedBefore
+    }
+
+    advancedOpen = true
+    addSearchHistory(filter.name)
+  }
 
   function openAddForm() {
     editingMedicine = null
@@ -226,78 +342,96 @@
     cameraActive = false
     showScanModal = false
   }
+
+  $: activeFilterCount = getActiveFilterCount()
+
+  function getActiveFilterCount() {
+    let count = 0
+    if (expiryDaysMin != null || expiryDaysMax != null) count++
+    if (quantityMin != null || quantityMax != null) count++
+    if (selectedCategories.length > 0) count++
+    if (selectedMembers.length > 0) count++
+    if (createdAfter || createdBefore) count++
+    if (updatedAfter || updatedBefore) count++
+    return count
+  }
 </script>
 
 <div class="h-full flex flex-col">
-  <div class="p-6 border-b border-medical-blue-50 bg-white">
-    <div class="flex items-center justify-between mb-4">
-      <div>
-        <h2 class="text-2xl font-bold text-medical-text-primary">药品管理</h2>
-        <p class="text-sm text-medical-text-secondary mt-1">共 {filteredMedicines.length} / {$medicines.length} 种药品</p>
+  <div class="border-b border-medical-blue-50 bg-white">
+    <div class="p-6 pb-4">
+      <div class="flex items-center justify-between mb-4">
+        <div>
+          <h2 class="text-2xl font-bold text-medical-text-primary">药品管理</h2>
+          <p class="text-sm text-medical-text-secondary mt-1">共 {filteredMedicines.length} / {$medicines.length} 种药品</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="btn-secondary" on:click={startScanner}>
+            <Icon name="scan" size={16} />
+            <span class="ml-1.5">扫码录入</span>
+          </button>
+          <button class="btn-ghost" on:click={() => showBatchModal = true}>
+            <Icon name="upload" size={16} />
+            <span class="ml-1.5">批量录入</span>
+          </button>
+          <button class="btn-primary" on:click={openAddForm}>
+            <Icon name="plus" size={16} />
+            <span class="ml-1.5">添加药品</span>
+          </button>
+        </div>
       </div>
-      <div class="flex items-center gap-2">
-        <button class="btn-secondary" on:click={startScanner}>
-          <Icon name="scan" size={16} />
-          <span class="ml-1.5">扫码录入</span>
-        </button>
-        <button class="btn-ghost" on:click={() => showBatchModal = true}>
-          <Icon name="upload" size={16} />
-          <span class="ml-1.5">批量录入</span>
-        </button>
-        <button class="btn-primary" on:click={openAddForm}>
-          <Icon name="plus" size={16} />
-          <span class="ml-1.5">添加药品</span>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <div class="relative flex-1 min-w-[280px]">
+          <SearchBox
+            bind:value={searchQuery}
+            {advancedOpen}
+            on:search={handleSearch}
+            on:clear={handleClearSearch}
+            on:toggleAdvanced={handleToggleAdvanced}
+            on:applyQuickFilter={handleApplyQuickFilter}
+          />
+        </div>
+        <select class="input-base w-auto" bind:value={filterStatus}>
+          <option value="all">全部状态</option>
+          <option value="normal">正常</option>
+          <option value="warning">临期</option>
+          <option value="expired">已过期</option>
+          <option value="marked">已标记处理</option>
+        </select>
+        <select class="input-base w-auto" bind:value={filterLocation}>
+          <option value="all">全部位置</option>
+          {#each STORAGE_LOCATIONS as loc}
+            <option value={loc}>{loc}</option>
+          {/each}
+        </select>
+        <select class="input-base w-auto" bind:value={sortBy}>
+          <option value="expiry">按有效期排序</option>
+          <option value="name">按名称排序</option>
+          <option value="created">按添加时间排序</option>
+        </select>
+        <button class="btn-ghost text-sm" on:click={markAllExpired} title="一键标记所有过期药品">
+          <Icon name="check" size={16} />
+          <span class="ml-1.5">一键标记过期</span>
         </button>
       </div>
     </div>
 
-    <div class="flex flex-wrap items-center gap-3">
-      <div class="relative flex-1 min-w-[200px]">
-        <div class="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
-          <Icon name="search" size={16} color="#9CA3AF" />
-        </div>
-        <input
-          type="text"
-          class="input-base pl-9"
-          placeholder="搜索药品名称、厂家、条形码..."
-          bind:value={searchQuery}
-        />
-      </div>
-      <select class="input-base w-auto" bind:value={filterCategory}>
-        <option value="all">全部分类</option>
-        <option value={MEDICINE_CATEGORIES.PRESCRIPTION}>处方药</option>
-        <option value={MEDICINE_CATEGORIES.OTC}>非处方药</option>
-        <option value={MEDICINE_CATEGORIES.EXTERNAL}>外用药</option>
-      </select>
-      <select class="input-base w-auto" bind:value={filterStatus}>
-        <option value="all">全部状态</option>
-        <option value="normal">正常</option>
-        <option value="warning">临期</option>
-        <option value="expired">已过期</option>
-        <option value="marked">已标记处理</option>
-      </select>
-      <select class="input-base w-auto" bind:value={filterLocation}>
-        <option value="all">全部位置</option>
-        {#each STORAGE_LOCATIONS as loc}
-          <option value={loc}>{loc}</option>
-        {/each}
-      </select>
-      <select class="input-base w-auto" bind:value={filterMember}>
-        <option value="all">全部成员</option>
-        {#each $familyMembers as member}
-          <option value={member.id}>{member.avatar} {member.name}</option>
-        {/each}
-      </select>
-      <select class="input-base w-auto" bind:value={sortBy}>
-        <option value="expiry">按有效期排序</option>
-        <option value="name">按名称排序</option>
-        <option value="created">按添加时间排序</option>
-      </select>
-      <button class="btn-ghost text-sm" on:click={markAllExpired} title="一键标记所有过期药品">
-        <Icon name="check" size={16} />
-        <span class="ml-1.5">一键标记过期</span>
-      </button>
-    </div>
+    <AdvancedSearch
+      bind:this={advancedSearchRef}
+      bind:open={advancedOpen}
+      bind:expiryDaysMin
+      bind:expiryDaysMax
+      bind:quantityMin
+      bind:quantityMax
+      bind:selectedCategories
+      bind:selectedMembers
+      bind:createdAfter
+      bind:createdBefore
+      bind:updatedAfter
+      bind:updatedBefore
+      on:change={handleAdvancedChange}
+    />
   </div>
 
   <div class="flex-1 overflow-y-auto p-6">
