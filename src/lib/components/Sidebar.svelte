@@ -5,6 +5,7 @@
 
   const navItems = [
     { id: 'dashboard', label: '首页看板', icon: 'home' },
+    { id: 'health-profile', label: '健康档案', icon: 'fileHealth' },
     { id: 'medicines', label: '药品管理', icon: 'pill' },
     { id: 'purchase-list', label: '采购清单', icon: 'shoppingCart' },
     { id: 'medical-records', label: '就诊记录', icon: 'fileText' },

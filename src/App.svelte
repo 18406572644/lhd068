@@ -9,6 +9,7 @@
   import PurchaseList from './lib/pages/PurchaseList.svelte'
   import Statistics from './lib/pages/Statistics.svelte'
   import Settings from './lib/pages/Settings.svelte'
+  import HealthProfile from './lib/pages/HealthProfile.svelte'
 
   let currentRoute = 'dashboard'
 
@@ -38,6 +39,8 @@
       <Statistics />
     {:else if currentRoute === 'settings'}
       <Settings />
+    {:else if currentRoute === 'health-profile'}
+      <HealthProfile />
     {/if}
   </main>
 </div>

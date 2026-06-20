@@ -13,6 +13,8 @@
     "@tauri-apps/api": "^1.5.3",
     "chart.js": "^4.5.1",
     "date-fns": "^3.6.0",
+    "jspdf": "^4.2.1",
+    "qrcode": "^1.5.4",
     "quagga": "^0.12.1",
     "svelte-routing": "^2.13.0",
     "xlsx": "^0.18.5"
