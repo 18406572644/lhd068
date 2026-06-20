@@ -89,6 +89,68 @@ export const PURCHASE_CHANNEL_COLORS = {
   [PURCHASE_CHANNELS.OTHER]: '#8B5CF6'
 }
 
+export const ALLERGY_TYPES = [
+  { value: 'penicillin', label: '青霉素类' },
+  { value: 'cephalosporin', label: '头孢菌素类' },
+  { value: 'sulfonamide', label: '磺胺类' },
+  { value: 'aspirin', label: '阿司匹林' },
+  { value: 'nsaid', label: '非甾体抗炎药' },
+  { value: 'iodine', label: '碘剂' },
+  { value: 'codeine', label: '可待因/吗啡类' },
+  { value: 'antibiotic_other', label: '其他抗生素' }
+]
+
+export const CHRONIC_DISEASES = [
+  { value: 'hypertension', label: '高血压' },
+  { value: 'diabetes', label: '糖尿病' },
+  { value: 'heart_disease', label: '心脏病' },
+  { value: 'liver_disease', label: '肝脏疾病' },
+  { value: 'kidney_disease', label: '肾脏疾病' },
+  { value: 'asthma', label: '哮喘/慢阻肺' },
+  { value: 'gastritis', label: '胃溃疡/胃炎' },
+  { value: 'glaucoma', label: '青光眼' },
+  { value: 'gout', label: '痛风/高尿酸' },
+  { value: 'epilepsy', label: '癫痫' },
+  { value: 'depression', label: '抑郁症/精神类' },
+  { value: 'arrhythmia', label: '心律失常' }
+]
+
+export const ORGAN_FUNCTION = {
+  NORMAL: 'normal',
+  MILD: 'mild',
+  SEVERE: 'severe'
+}
+
+export const ORGAN_FUNCTION_LABELS = {
+  [ORGAN_FUNCTION.NORMAL]: '正常',
+  [ORGAN_FUNCTION.MILD]: '轻度异常',
+  [ORGAN_FUNCTION.SEVERE]: '重度异常'
+}
+
+export const ORGAN_FUNCTION_COLORS = {
+  [ORGAN_FUNCTION.NORMAL]: 'bg-medical-green-50 text-medical-green-500',
+  [ORGAN_FUNCTION.MILD]: 'bg-amber-50 text-amber-600',
+  [ORGAN_FUNCTION.SEVERE]: 'bg-red-50 text-medical-danger'
+}
+
+export const INTERACTION_RISK = {
+  HIGH: 'high',
+  MEDIUM: 'medium',
+  LOW: 'low'
+}
+
+export const INTERACTION_RISK_LABELS = {
+  [INTERACTION_RISK.HIGH]: '高风险',
+  [INTERACTION_RISK.MEDIUM]: '中风险',
+  [INTERACTION_RISK.LOW]: '低风险'
+}
+
+export const INTERACTION_RISK_COLORS = {
+  [INTERACTION_RISK.HIGH]: 'bg-red-100 text-medical-danger border-red-200',
+  [INTERACTION_RISK.MEDIUM]: 'bg-amber-100 text-amber-700 border-amber-200',
+  [INTERACTION_RISK.LOW]: 'bg-blue-100 text-blue-600 border-blue-200'
+}
+
 export const FAMILY_MEDICINE_TEMPLATES = {
   cold: {
     name: '感冒类',

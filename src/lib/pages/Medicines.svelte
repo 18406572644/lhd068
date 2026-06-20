@@ -13,7 +13,7 @@
     toggleMarkedExpired,
     markAllExpired
   } from '../stores/medicines.js'
-  import { familyMembers } from '../stores/familyMembers.js'
+  import { familyMembers, getMemberCurrentMedicines } from '../stores/familyMembers.js'
   import { addSearchHistory } from '../stores/search.js'
   import {
     MEDICINE_CATEGORIES,
@@ -22,7 +22,13 @@
     DOSAGE_UNITS,
     EXPIRY_STATUS,
     PURCHASE_CHANNELS,
-    PURCHASE_CHANNEL_LABELS
+    PURCHASE_CHANNEL_LABELS,
+    INTERACTION_RISK,
+    INTERACTION_RISK_LABELS,
+    INTERACTION_RISK_COLORS,
+    ALLERGY_TYPES,
+    CHRONIC_DISEASES,
+    ORGAN_FUNCTION_LABELS
   } from '../utils/constants.js'
   import {
     getExpiryStatus,
@@ -31,6 +37,7 @@
     todayISO
   } from '../utils/helpers.js'
   import { calculateTotalAmount } from '../utils/statistics.js'
+  import { checkAllWarnings, calculateAge, isChild, isElderly } from '../utils/medicationSafety.js'
 
   let searchQuery = ''
   let filterStatus = 'all'
@@ -61,6 +68,53 @@
   let deletingMedicineId = null
 
   $: selectedMedicine = $medicines.find((m) => m.id === selectedMedicineId) || null
+
+  $: memberSafetyResults = (() => {
+    if (!selectedMedicine) return []
+    const results = []
+    const memberIds = selectedMedicine.familyMemberIds || []
+    for (const mid of memberIds) {
+      const member = $familyMembers.find((m) => m.id === mid)
+      if (!member) continue
+      const currentMeds = getMemberCurrentMedicines(mid).filter((n) => n !== selectedMedicine.name)
+      const safety = checkAllWarnings(member, selectedMedicine.name, currentMeds, selectedMedicine.dosage)
+      results.push({ member, safety })
+    }
+    return results
+  })()
+
+  function getAllergyLabels(member) {
+    const labels = []
+    for (const a of member.allergies || []) {
+      const found = ALLERGY_TYPES.find((t) => t.value === a)
+      if (found) labels.push(found.label)
+    }
+    if (member.customAllergies) labels.push(...member.customAllergies)
+    return labels
+  }
+
+  function getChronicLabels(member) {
+    const labels = []
+    for (const d of member.chronicDiseases || []) {
+      const found = CHRONIC_DISEASES.find((t) => t.value === d)
+      if (found) labels.push(found.label)
+    }
+    return labels
+  }
+
+  function getWarningColors(level) {
+    if (level === INTERACTION_RISK.HIGH) return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-medical-danger', iconColor: '#EF4444' }
+    if (level === INTERACTION_RISK.MEDIUM) return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', iconColor: '#F59E0B' }
+    return { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-600', iconColor: '#3B82F6' }
+  }
+
+  function getMemberAgeText(member) {
+    const age = calculateAge(member.birthDate)
+    if (age == null) return ''
+    if (isChild(age)) return `${age}岁 · 儿童`
+    if (isElderly(age)) return `${age}岁 · 老人`
+    return `${age}岁`
+  }
 
   let form = getDefaultForm()
   let batchRows = [getDefaultForm()]
@@ -846,6 +900,97 @@
               {/each}
             {/each}
           </div>
+        </div>
+      {/if}
+
+      {#if memberSafetyResults.length > 0}
+        <div class="pt-4 border-t border-medical-blue-50">
+          <p class="text-sm font-semibold text-medical-text-primary mb-3 flex items-center gap-1.5">
+            <Icon name="shield" size={16} color="#3B82F6" />
+            安全提示
+          </p>
+          <div class="space-y-3">
+            {#each memberSafetyResults as result, rIdx}
+              <div class="rounded-xl border border-medical-blue-100 bg-white p-3">
+                <div class="flex items-start justify-between gap-3 mb-2">
+                  <div class="flex items-center gap-2">
+                    <span class="text-xl">{result.member.avatar}</span>
+                    <div>
+                      <p class="text-sm font-medium text-medical-text-primary">{result.member.name}</p>
+                      <p class="text-xs text-medical-text-tertiary">
+                        {#if getMemberAgeText(result.member)}{getMemberAgeText(result.member)}{/if}
+                        {#if result.member.weight} · 体重 {result.member.weight}kg{/if}
+                        {#if result.member.liverFunction && result.member.liverFunction !== 'normal'} · 肝功 {ORGAN_FUNCTION_LABELS[result.member.liverFunction]}{/if}
+                        {#if result.member.kidneyFunction && result.member.kidneyFunction !== 'normal'} · 肾功 {ORGAN_FUNCTION_LABELS[result.member.kidneyFunction]}{/if}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    {#if result.safety.hasBlocker}
+                      <span class="tag bg-red-100 text-medical-danger text-xs border border-red-200">禁止使用</span>
+                    {:else if result.safety.hasHighRisk}
+                      <span class="tag bg-red-50 text-medical-danger text-xs">高风险</span>
+                    {:else if result.safety.hasMediumRisk}
+                      <span class="tag bg-amber-50 text-amber-700 text-xs">中风险</span>
+                    {:else if result.safety.hasLowRisk}
+                      <span class="tag bg-blue-50 text-blue-600 text-xs">低风险</span>
+                    {:else}
+                      <span class="tag bg-medical-green-50 text-medical-green-500 text-xs">安全</span>
+                    {/if}
+                  </div>
+                </div>
+
+                {#if getAllergyLabels(result.member).length > 0 || getChronicLabels(result.member).length > 0 || (result.member.longTermMedications && result.member.longTermMedications.length > 0)}
+                  <div class="flex flex-wrap gap-x-3 gap-y-1 mb-2 text-xs">
+                    {#if getAllergyLabels(result.member).length > 0}
+                      <span class="text-medical-text-tertiary">过敏：{getAllergyLabels(result.member).join('、')}</span>
+                    {/if}
+                    {#if getChronicLabels(result.member).length > 0}
+                      <span class="text-medical-text-tertiary">慢病：{getChronicLabels(result.member).join('、')}</span>
+                    {/if}
+                    {#if result.member.longTermMedications && result.member.longTermMedications.length > 0}
+                      <span class="text-medical-text-tertiary">长服：{result.member.longTermMedications.join('、')}</span>
+                    {/if}
+                  </div>
+                {/if}
+
+                {#if result.safety.warnings.length > 0}
+                  <div class="space-y-1.5">
+                    {#each result.safety.warnings as w, wIdx}
+                      {@const colors = getWarningColors(w.level)}
+                      <div class="rounded-lg border p-2.5 {colors.bg} {colors.border}">
+                        <div class="flex items-start gap-2">
+                          <div class="flex-shrink-0 mt-0.5">
+                            <Icon name="alert" size={14} color={colors.iconColor} />
+                          </div>
+                          <div class="flex-1 min-w-0">
+                            <div class="flex items-center gap-1.5 flex-wrap">
+                              <span class="text-xs font-medium {colors.text}">{w.title}</span>
+                              <span class="tag text-[10px] px-1.5 py-px {INTERACTION_RISK_COLORS[w.level]}">{INTERACTION_RISK_LABELS[w.level]}</span>
+                              {#if w.blockSave}
+                                <span class="tag text-[10px] px-1.5 py-px bg-red-100 text-medical-danger border-red-200">禁用</span>
+                              {/if}
+                            </div>
+                            <p class="text-[11px] mt-0.5 text-medical-text-secondary leading-relaxed">{w.description}</p>
+                          </div>
+                        </div>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="rounded-lg p-2.5 bg-medical-green-50 border border-medical-green-100">
+                    <div class="flex items-center gap-1.5">
+                      <Icon name="check" size={14} color="#10B981" />
+                      <span class="text-xs text-medical-green-600 font-medium">未检测到安全风险，可放心使用</span>
+                    </div>
+                  </div>
+                {/if}
+              </div>
+            {/each}
+          </div>
+          <p class="text-[11px] text-medical-text-tertiary mt-2">
+            提示：以上安全提示仅供参考，具体用药请遵医嘱。如有疑问请咨询医生或药师。
+          </p>
         </div>
       {/if}
 

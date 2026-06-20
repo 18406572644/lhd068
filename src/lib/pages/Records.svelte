@@ -8,9 +8,10 @@
     deleteRecord
   } from '../stores/medicationRecords.js'
   import { medicines } from '../stores/medicines.js'
-  import { familyMembers } from '../stores/familyMembers.js'
-  import { DOSAGE_UNITS } from '../utils/constants.js'
+  import { familyMembers, getMemberById, getMemberCurrentMedicines } from '../stores/familyMembers.js'
+  import { DOSAGE_UNITS, INTERACTION_RISK, INTERACTION_RISK_LABELS, INTERACTION_RISK_COLORS } from '../utils/constants.js'
   import { formatDateTime, formatDate, nowISO } from '../utils/helpers.js'
+  import { checkAllWarnings } from '../utils/medicationSafety.js'
 
   let filterMember = 'all'
   let filterMedicine = 'all'
@@ -18,6 +19,8 @@
   let showDeleteConfirm = false
   let editingRecord = null
   let deletingRecordId = null
+  let showSafetyConfirm = false
+  let pendingSafetyWarnings = []
 
   let form = {
     medicineId: '',
@@ -38,6 +41,19 @@
   $: uniqueMedicines = new Set(sortedRecords.map(r => r.medicineName || r.medicineId).filter(Boolean))
   $: uniqueMembers = new Set(sortedRecords.map(r => r.familyMemberId).filter(Boolean))
 
+  $: currentSafetyResult = (() => {
+    if (!form.familyMemberId || (!form.medicineName && !form.medicineId)) {
+      return { warnings: [], hasBlocker: false, hasHighRisk: false, hasMediumRisk: false, hasLowRisk: false }
+    }
+    const member = getMemberById(form.familyMemberId)
+    const medName = form.medicineName || (() => {
+      const m = $medicines.find((x) => x.id === form.medicineId)
+      return m ? m.name : ''
+    })()
+    const currentMeds = getMemberCurrentMedicines(form.familyMemberId).filter((n) => n !== medName)
+    return checkAllWarnings(member, medName, currentMeds, form.dosage)
+  })()
+
   function resetForm() {
     form = {
       medicineId: '',
@@ -48,6 +64,8 @@
       time: nowISO(),
       notes: ''
     }
+    showSafetyConfirm = false
+    pendingSafetyWarnings = []
   }
 
   function openAddForm() {
@@ -83,12 +101,41 @@
       alert('请选择用药成员')
       return
     }
+
+    if (currentSafetyResult.hasBlocker) {
+      return
+    }
+
+    if (currentSafetyResult.warnings.length > 0 && !showSafetyConfirm) {
+      pendingSafetyWarnings = currentSafetyResult.warnings
+      showSafetyConfirm = true
+      return
+    }
+
     if (editingRecord) {
       updateRecord(editingRecord.id, form)
     } else {
       addRecord(form)
     }
     showFormModal = false
+    showSafetyConfirm = false
+    pendingSafetyWarnings = []
+  }
+
+  function confirmSafetyAndSubmit() {
+    if (editingRecord) {
+      updateRecord(editingRecord.id, form)
+    } else {
+      addRecord(form)
+    }
+    showFormModal = false
+    showSafetyConfirm = false
+    pendingSafetyWarnings = []
+  }
+
+  function cancelSafetyConfirm() {
+    showSafetyConfirm = false
+    pendingSafetyWarnings = []
   }
 
   function requestDelete(id) {
@@ -111,6 +158,18 @@
 
   function getMember(id) {
     return $familyMembers.find((m) => m.id === id)
+  }
+
+  function getWarningIcon(level) {
+    if (level === INTERACTION_RISK.HIGH) return 'alert'
+    if (level === INTERACTION_RISK.MEDIUM) return 'alert'
+    return 'info'
+  }
+
+  function getWarningColor(level) {
+    if (level === INTERACTION_RISK.HIGH) return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-medical-danger', iconColor: '#EF4444' }
+    if (level === INTERACTION_RISK.MEDIUM) return { bg: 'bg-amber-50', border: 'border-amber-200', text: 'text-amber-700', iconColor: '#F59E0B' }
+    return { bg: 'bg-blue-50', border: 'border-blue-200', text: 'text-blue-600', iconColor: '#3B82F6' }
   }
 </script>
 
@@ -225,8 +284,8 @@
   </div>
 </div>
 
-<Modal show={showFormModal} title={editingRecord ? '编辑用药记录' : '记录用药'} width="480px">
-  <div class="space-y-4">
+<Modal show={showFormModal} title={editingRecord ? '编辑用药记录' : '记录用药'} width="520px">
+  <div class="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
     <div>
       <label class="label-base">成员 <span class="text-medical-danger">*</span></label>
       <select class="input-base" bind:value={form.familyMemberId}>
@@ -273,10 +332,89 @@
       <label class="label-base">备注</label>
       <textarea class="input-base h-20 resize-none" placeholder="饭后服用 / 与餐同服 等" bind:value={form.notes}></textarea>
     </div>
+
+    {#if currentSafetyResult.warnings.length > 0}
+      <div class="pt-3 border-t border-medical-blue-50">
+        <p class="text-sm font-semibold text-medical-text-primary mb-2 flex items-center gap-1.5">
+          <Icon name="shield" size={16} color="#EF4444" />
+          用药安全提示
+        </p>
+        <div class="space-y-2">
+          {#each currentSafetyResult.warnings as w, idx}
+            {@const colors = getWarningColor(w.level)}
+            <div class="rounded-lg border p-3 {colors.bg} {colors.border}">
+              <div class="flex items-start gap-2">
+                <div class="flex-shrink-0 mt-0.5">
+                  <Icon name={getWarningIcon(w.level)} size={16} color={colors.iconColor} />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span class="text-sm font-medium {colors.text}">{w.title}</span>
+                    <span class="tag text-xs px-2 py-0.5 {INTERACTION_RISK_COLORS[w.level]}">{INTERACTION_RISK_LABELS[w.level]}</span>
+                    {#if w.blockSave}
+                      <span class="tag text-xs px-2 py-0.5 bg-red-100 text-medical-danger border-red-200">禁止保存</span>
+                    {/if}
+                  </div>
+                  <p class="text-xs mt-1 text-medical-text-secondary leading-relaxed">{w.description}</p>
+                  {#if w.drugA && w.drugB}
+                    <p class="text-xs mt-1 {colors.text} font-medium">冲突药物：{w.drugA} + {w.drugB}</p>
+                  {/if}
+                </div>
+              </div>
+            </div>
+          {/each}
+        </div>
+      </div>
+    {/if}
   </div>
   <div slot="footer">
     <button class="btn-ghost" on:click={() => showFormModal = false}>取消</button>
-    <button class="btn-primary" on:click={handleSubmit}>{editingRecord ? '保存修改' : '保存记录'}</button>
+    <button class="btn-primary" on:click={handleSubmit} disabled={currentSafetyResult.hasBlocker}>
+      {currentSafetyResult.hasBlocker ? '存在致命风险，无法保存' : editingRecord ? '保存修改' : '保存记录'}
+    </button>
+  </div>
+</Modal>
+
+<Modal show={showSafetyConfirm} title="确认继续用药" width="520px" on:close={cancelSafetyConfirm}>
+  <div class="py-2">
+    <div class="flex items-start gap-3 mb-4">
+      <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center flex-shrink-0">
+        <Icon name="alert" size={20} color="#F59E0B" />
+      </div>
+      <div>
+        <p class="font-medium text-medical-text-primary">以下安全风险需要您确认</p>
+        <p class="text-sm text-medical-text-secondary mt-1">请仔细阅读以下风险提示，确认是否继续保存记录。</p>
+      </div>
+    </div>
+    <div class="space-y-2 max-h-80 overflow-y-auto pr-1">
+      {#each pendingSafetyWarnings as w, idx}
+        {@const colors = getWarningColor(w.level)}
+        <div class="rounded-lg border p-3 {colors.bg} {colors.border}">
+          <div class="flex items-start gap-2">
+            <div class="flex-shrink-0 mt-0.5">
+              <Icon name={getWarningIcon(w.level)} size={16} color={colors.iconColor} />
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-medium {colors.text}">{w.title}</span>
+                <span class="tag text-xs px-2 py-0.5 {INTERACTION_RISK_COLORS[w.level]}">{INTERACTION_RISK_LABELS[w.level]}</span>
+              </div>
+              <p class="text-xs mt-1 text-medical-text-secondary leading-relaxed">{w.description}</p>
+            </div>
+          </div>
+        </div>
+      {/each}
+    </div>
+    <p class="text-xs text-medical-text-tertiary mt-4">
+      提示：如您对用药安全有疑问，请咨询医生或药师。
+    </p>
+  </div>
+  <div slot="footer">
+    <button class="btn-ghost" on:click={cancelSafetyConfirm}>返回修改</button>
+    <button class="btn-danger" on:click={confirmSafetyAndSubmit}>
+      <Icon name="check" size={16} />
+      <span class="ml-1.5">我已了解风险，确认保存</span>
+    </button>
   </div>
 </Modal>
 
