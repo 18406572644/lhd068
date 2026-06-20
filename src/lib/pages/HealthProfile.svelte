@@ -1,5 +1,5 @@
 <script>
-  import { onMount, afterUpdate, createEventDispatcher } from 'svelte'
+  import { onMount, tick, createEventDispatcher } from 'svelte'
   import Icon from '../components/Icon.svelte'
   import Modal from '../components/Modal.svelte'
   import { familyMembers } from '../stores/familyMembers.js'
@@ -44,7 +44,7 @@
     selectedMemberId = $familyMembers[0].id
   }
 
-  $: if (selectedMemberId) {
+  $: if (selectedMemberId && startDate !== undefined) {
     loadProfile()
   }
 
@@ -67,19 +67,14 @@
   async function loadProfile() {
     if (!selectedMemberId) return
     loading = true
-    try {
-      profile = getMemberFullProfile(selectedMemberId, startDate, endDate)
-      await afterUpdatePromise()
-      renderAdherenceChart()
-    } finally {
-      loading = false
+    if (adherenceChart) {
+      adherenceChart.destroy()
+      adherenceChart = null
     }
-  }
-
-  function afterUpdatePromise() {
-    return new Promise((resolve) => {
-      afterUpdate(() => resolve())
-    })
+    profile = getMemberFullProfile(selectedMemberId, startDate, endDate)
+    loading = false
+    await tick()
+    renderAdherenceChart()
   }
 
   function renderAdherenceChart() {
@@ -107,55 +102,62 @@
         ? 'rgba(245, 158, 11, 1)'
         : 'rgba(239, 68, 68, 1)'
 
-    adherenceChart = new Chart(ctx, {
-      type: 'bar',
-      data: {
-        labels,
-        datasets: [{
-          label: '服药次数',
-          data,
-          backgroundColor: barColor,
-          borderColor: barBorder,
-          borderWidth: 1,
-          borderRadius: 6,
-          borderSkipped: false
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: (ctx) => `实际服药：${ctx.raw} 次 / 预期：21 次`
-            }
-          }
+    try {
+      adherenceChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: '服药次数',
+            data,
+            backgroundColor: barColor,
+            borderColor: barBorder,
+            borderWidth: 1,
+            borderRadius: 6,
+            borderSkipped: false
+          }]
         },
-        scales: {
-          y: {
-            beginAtZero: true,
-            suggestedMax: 21,
-            grid: {
-              color: 'rgba(229, 231, 235, 0.5)'
-            },
-            ticks: {
-              stepSize: 7,
-              color: '#9CA3AF',
-              font: { size: 11 }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          animation: {
+            duration: 300
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: (ctx) => `实际服药：${ctx.raw} 次 / 预期：21 次`
+              }
             }
           },
-          x: {
-            grid: { display: false },
-            ticks: {
-              color: '#9CA3AF',
-              font: { size: 10 },
-              maxRotation: 0
+          scales: {
+            y: {
+              beginAtZero: true,
+              suggestedMax: 21,
+              grid: {
+                color: 'rgba(229, 231, 235, 0.5)'
+              },
+              ticks: {
+                stepSize: 7,
+                color: '#9CA3AF',
+                font: { size: 11 }
+              }
+            },
+            x: {
+              grid: { display: false },
+              ticks: {
+                color: '#9CA3AF',
+                font: { size: 10 },
+                maxRotation: 0
+              }
             }
           }
         }
-      }
-    })
+      })
+    } catch (e) {
+      console.error('渲染图表失败:', e)
+    }
   }
 
   function getDateRangeOptions() {
@@ -678,7 +680,7 @@
               </div>
               <h4 class="font-semibold text-medical-text-primary">用药依从性趋势</h4>
             </div>
-            <div class="h-48">
+            <div class="h-48 w-full relative">
               <canvas bind:this={adherenceChartRef}></canvas>
             </div>
           </div>

@@ -4,6 +4,7 @@
   import Modal from '../components/Modal.svelte'
   import SearchBox from '../components/SearchBox.svelte'
   import AdvancedSearch from '../components/AdvancedSearch.svelte'
+  import AlarmModal from '../components/AlarmModal.svelte'
   import {
     medicines,
     addMedicine,
@@ -63,6 +64,7 @@
   let showDetailModal = false
   let showScanModal = false
   let showDeleteConfirm = false
+  let showAlarmModal = false
   let editingMedicine = null
   let selectedMedicineId = null
   let deletingMedicineId = null
@@ -1081,6 +1083,10 @@
       <Icon name="check" size={16} />
       <span class="ml-1">{selectedMedicine?.markedExpired ? '取消标记' : '标记已处理'}</span>
     </button>
+    <button class="btn-ghost" on:click={() => showAlarmModal = true}>
+      <Icon name="bell" size={16} />
+      <span class="ml-1">用药闹钟</span>
+    </button>
     <button class="btn-ghost" on:click={closeDetailModal}>关闭</button>
     <button class="btn-primary" on:click={() => { closeDetailModal(); openEditForm(selectedMedicine) }}>
       <Icon name="edit" size={16} />
@@ -1132,3 +1138,5 @@
     <button class="btn-danger" on:click={confirmDelete}>确认删除</button>
   </div>
 </Modal>
+
+<AlarmModal bind:show={showAlarmModal} medicine={selectedMedicine} />

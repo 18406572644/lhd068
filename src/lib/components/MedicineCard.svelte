@@ -3,6 +3,7 @@
   import { CATEGORY_LABELS, CATEGORY_COLORS, EXPIRY_STATUS } from '../utils/constants.js'
   import { getExpiryStatus, getExpiryStatusText, getExpiryStatusColor, formatDate } from '../utils/helpers.js'
   import { getMemberById } from '../stores/familyMembers.js'
+  import { alarms } from '../stores/alarms.js'
 
   export let medicine
   export let compact = false
@@ -14,6 +15,9 @@
   $: isWarning = status === EXPIRY_STATUS.WARNING
   $: categoryColor = CATEGORY_COLORS[medicine.category] || 'bg-gray-100 text-gray-600'
   $: categoryLabel = CATEGORY_LABELS[medicine.category] || '未知'
+  $: hasActiveAlarm = $alarms.some(
+    (a) => a.medicineId === medicine.id && a.enabled
+  )
 </script>
 
 <div
@@ -39,6 +43,11 @@
           <p class="text-xs text-medical-text-tertiary mt-0.5">{medicine.specification || '-'}</p>
         </div>
         <div class="flex items-center gap-1 flex-shrink-0">
+          {#if hasActiveAlarm}
+            <span class="w-6 h-6 rounded-full bg-medical-blue-100 flex items-center justify-center" title="已设置用药闹钟">
+              <Icon name="bell" size={12} color="#3B82F6" />
+            </span>
+          {/if}
           {#if medicine.markedExpired}
             <span class="tag bg-gray-100 text-gray-500">已标记处理</span>
           {/if}
