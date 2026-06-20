@@ -33,6 +33,9 @@
     return true
   }).sort((a, b) => new Date(b.time) - new Date(a.time))
 
+  $: uniqueMedicines = new Set(sortedRecords.map(r => r.medicineName || r.medicineId).filter(Boolean))
+  $: uniqueMembers = new Set(sortedRecords.map(r => r.familyMemberId).filter(Boolean))
+
   function resetForm() {
     form = {
       medicineId: '',
@@ -109,7 +112,7 @@
         <span class="ml-1.5">记录用药</span>
       </button>
     </div>
-    <div class="flex flex-wrap items-center gap-3">
+    <div class="flex flex-wrap items-center gap-3 mb-4">
       <select class="input-base w-auto" bind:value={filterMember}>
         <option value="all">全部成员</option>
         {#each $familyMembers as member}
@@ -122,6 +125,20 @@
           <option value={med.id}>{med.name}</option>
         {/each}
       </select>
+    </div>
+    <div class="grid grid-cols-3 gap-3">
+      <div class="bg-medical-blue-50/50 rounded-lg p-3 text-center">
+        <p class="text-2xl font-bold text-medical-blue-500">{sortedRecords.length}</p>
+        <p class="text-xs text-medical-text-secondary mt-0.5">总次数</p>
+      </div>
+      <div class="bg-medical-green-50/50 rounded-lg p-3 text-center">
+        <p class="text-2xl font-bold text-medical-green-500">{uniqueMedicines.size}</p>
+        <p class="text-xs text-medical-text-secondary mt-0.5">涉及药品</p>
+      </div>
+      <div class="bg-purple-50 rounded-lg p-3 text-center">
+        <p class="text-2xl font-bold text-purple-500">{uniqueMembers.size}</p>
+        <p class="text-xs text-medical-text-secondary mt-0.5">涉及成员</p>
+      </div>
     </div>
   </div>
 

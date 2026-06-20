@@ -7,7 +7,6 @@
     "distDir": "../dist"
   },
   "package": {
-    "category": "Productivity",
     "productName": "家庭药箱",
     "version": "1.0.0"
   },
@@ -51,46 +50,14 @@
       }
     },
     "bundle": {
-      "active": true,
-      "category": "Productivity",
-      "copyright": "Copyright 2025, 家庭药箱",
-      "deb": {
-        "depends": []
-      },
-      "externalBin": [],
-      "icon": [
-        "icons/32x32.png",
-        "icons/128x128.png",
-        "icons/128x128@2x.png",
-        "icons/icon.icns",
-        "icons/icon.ico"
-      ],
+      "active": false,
       "identifier": "com.family.medicine.box",
-      "longDescription": "家庭药品收纳与有效期提醒桌面工具",
-      "macOS": {
-        "entitlements": null,
-        "exceptionDomain": "",
-        "frameworks": [],
-        "providerShortName": null,
-        "signingIdentity": null
-      },
-      "resources": [],
-      "shortDescription": "家庭药箱管理",
-      "targets": "all",
-      "windows": {
-        "certificateThumbprint": null,
-        "digestAlgorithm": "sha256",
-        "timestampUrl": ""
-      }
+      "targets": "msi"
     },
     "security": {
       "csp": null
     },
-    "systemTray": {
-      "iconPath": "icons/icon.ico",
-      "iconAsTemplate": true,
-      "tooltip": "家庭药箱"
-    },
+
     "updater": {
       "active": false
     },

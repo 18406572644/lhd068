@@ -1,11 +1,327 @@
 <script>
-  import { onMount } from 'svelte'
+  import { onMount, tick } from 'svelte'
+  import { Chart, registerables } from 'chart.js'
   import Icon from '../components/Icon.svelte'
   import { medicines } from '../stores/medicines.js'
   import { familyMembers } from '../stores/familyMembers.js'
   import { medicationRecords } from '../stores/medicationRecords.js'
   import { MEDICINE_CATEGORIES, CATEGORY_LABELS, STORAGE_LOCATIONS, EXPIRY_STATUS } from '../utils/constants.js'
-  import { getExpiryStatus, getDaysUntilExpiry } from '../utils/helpers.js'
+  import { getExpiryStatus, getDaysUntilExpiry, formatDate } from '../utils/helpers.js'
+
+  Chart.register(...registerables)
+
+  let trendPeriod = 7
+  let trendDimension = 'day'
+  let trendChart = null
+  let medicineRankChart = null
+  let memberCompareChart = null
+
+  let trendCanvas = null
+  let medicineRankCanvas = null
+  let memberCompareCanvas = null
+
+  const PERIOD_OPTIONS = [
+    { value: 7, label: '近7天' },
+    { value: 30, label: '近30天' },
+    { value: 90, label: '近90天' }
+  ]
+
+  const DIMENSION_OPTIONS = [
+    { value: 'day', label: '按日' },
+    { value: 'week', label: '按周' },
+    { value: 'month', label: '按月' }
+  ]
+
+  function getDateLabels(days, dimension) {
+    const labels = []
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    if (dimension === 'day') {
+      for (let i = days - 1; i >= 0; i--) {
+        const date = new Date(today)
+        date.setDate(date.getDate() - i)
+        labels.push(formatDate(date.toISOString()))
+      }
+    } else if (dimension === 'week') {
+      const weeks = Math.ceil(days / 7)
+      for (let i = weeks - 1; i >= 0; i--) {
+        const endDate = new Date(today)
+        endDate.setDate(endDate.getDate() - i * 7)
+        const startDate = new Date(endDate)
+        startDate.setDate(startDate.getDate() - 6)
+        labels.push(`${formatDate(startDate.toISOString()).slice(5)}~${formatDate(endDate.toISOString()).slice(5)}`)
+      }
+    } else if (dimension === 'month') {
+      const months = Math.ceil(days / 30)
+      for (let i = months - 1; i >= 0; i--) {
+        const date = new Date(today)
+        date.setMonth(date.getMonth() - i)
+        labels.push(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`)
+      }
+    }
+    return labels
+  }
+
+  function getTrendData(days, dimension) {
+    const labels = getDateLabels(days, dimension)
+    const counts = new Array(labels.length).fill(0)
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    $medicationRecords.forEach(record => {
+      const recordDate = new Date(record.time)
+      recordDate.setHours(0, 0, 0, 0)
+      const diffDays = Math.floor((today - recordDate) / (1000 * 60 * 60 * 24))
+
+      if (diffDays < days && diffDays >= 0) {
+        let index
+        if (dimension === 'day') {
+          index = days - 1 - diffDays
+        } else if (dimension === 'week') {
+          index = Math.floor((days - 1 - diffDays) / 7)
+          const weeks = Math.ceil(days / 7)
+          index = weeks - 1 - Math.floor(diffDays / 7)
+        } else if (dimension === 'month') {
+          const months = Math.ceil(days / 30)
+          const recordMonth = recordDate.getMonth()
+          const todayMonth = today.getMonth()
+          const diffMonths = (today.getFullYear() - recordDate.getFullYear()) * 12 + todayMonth - recordMonth
+          index = months - 1 - diffMonths
+        }
+        if (index >= 0 && index < counts.length) {
+          counts[index]++
+        }
+      }
+    })
+
+    return { labels, data: counts }
+  }
+
+  function getMedicineRankData(topN = 10) {
+    const medicineCount = {}
+    $medicationRecords.forEach(record => {
+      const name = record.medicineName || '未知药品'
+      medicineCount[name] = (medicineCount[name] || 0) + 1
+    })
+
+    const sorted = Object.entries(medicineCount)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, topN)
+
+    return {
+      labels: sorted.map(item => item[0]).reverse(),
+      data: sorted.map(item => item[1]).reverse()
+    }
+  }
+
+  function getMemberCompareData(days) {
+    const memberCount = {}
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    $medicationRecords.forEach(record => {
+      const recordDate = new Date(record.time)
+      recordDate.setHours(0, 0, 0, 0)
+      const diffDays = Math.floor((today - recordDate) / (1000 * 60 * 60 * 24))
+
+      if (diffDays < days && diffDays >= 0) {
+        const member = $familyMembers.find(m => m.id === record.familyMemberId)
+        const name = member ? member.name : '未知成员'
+        memberCount[name] = (memberCount[name] || 0) + 1
+      }
+    })
+
+    const members = $familyMembers.map(m => m.name)
+    return {
+      labels: members,
+      data: members.map(name => memberCount[name] || 0),
+      colors: $familyMembers.map(m => m.color)
+    }
+  }
+
+  function initTrendChart() {
+    if (!trendCanvas) return
+    if (trendChart) trendChart.destroy()
+
+    const { labels, data } = getTrendData(trendPeriod, trendDimension)
+
+    trendChart = new Chart(trendCanvas, {
+      type: 'line',
+      data: {
+        labels,
+        datasets: [{
+          label: '用药次数',
+          data,
+          borderColor: '#3B82F6',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true,
+          tension: 0.4,
+          pointRadius: 4,
+          pointBackgroundColor: '#3B82F6',
+          pointBorderColor: '#fff',
+          pointBorderWidth: 2,
+          pointHoverRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1,
+              color: '#6B7280'
+            },
+            grid: {
+              color: 'rgba(229, 231, 235, 0.5)'
+            }
+          },
+          x: {
+            ticks: {
+              color: '#6B7280',
+              maxRotation: 45,
+              minRotation: 0
+            },
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    })
+  }
+
+  function initMedicineRankChart() {
+    if (!medicineRankCanvas) return
+    if (medicineRankChart) medicineRankChart.destroy()
+
+    const { labels, data } = getMedicineRankData(10)
+
+    medicineRankChart = new Chart(medicineRankCanvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: '使用次数',
+          data,
+          backgroundColor: 'rgba(16, 185, 129, 0.8)',
+          borderRadius: 4,
+          barThickness: 20
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          x: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1,
+              color: '#6B7280'
+            },
+            grid: {
+              color: 'rgba(229, 231, 235, 0.5)'
+            }
+          },
+          y: {
+            ticks: {
+              color: '#374151'
+            },
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    })
+  }
+
+  function initMemberCompareChart() {
+    if (!memberCompareCanvas) return
+    if (memberCompareChart) memberCompareChart.destroy()
+
+    const { labels, data, colors } = getMemberCompareData(trendPeriod)
+
+    memberCompareChart = new Chart(memberCompareCanvas, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: '用药次数',
+          data,
+          backgroundColor: colors,
+          borderRadius: 6,
+          barThickness: 40
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            display: false
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: {
+              stepSize: 1,
+              color: '#6B7280'
+            },
+            grid: {
+              color: 'rgba(229, 231, 235, 0.5)'
+            }
+          },
+          x: {
+            ticks: {
+              color: '#374151'
+            },
+            grid: {
+              display: false
+            }
+          }
+        }
+      }
+    })
+  }
+
+  function updateAllCharts() {
+    initTrendChart()
+    initMedicineRankChart()
+    initMemberCompareChart()
+  }
+
+  onMount(() => {
+    tick().then(() => {
+      updateAllCharts()
+    })
+  })
+
+  $: trendPeriod, trendDimension, updateChartsForPeriod()
+
+  function updateChartsForPeriod() {
+    if (trendChart) initTrendChart()
+    if (memberCompareChart) initMemberCompareChart()
+  }
+
+  $: recordLen = $medicationRecords.length
+  $: if (recordLen >= 0 && trendChart && medicineRankChart && memberCompareChart) {
+    updateAllCharts()
+  }
 
   $: totalCount = $medicines.length
   $: totalQuantity = $medicines.reduce((sum, m) => sum + (Number(m.quantity) || 0), 0)
@@ -231,6 +547,80 @@
               {/each}
             </div>
           {/if}
+        </div>
+      </div>
+    </div>
+
+    <div class="mb-6">
+      <h2 class="text-xl font-bold text-medical-text-primary flex items-center gap-2">
+        <Icon name="stats" size={20} color="#8B5CF6" />
+        用药分析
+      </h2>
+      <p class="text-sm text-medical-text-secondary mt-1">深入了解家庭用药习惯与趋势</p>
+    </div>
+
+    <div class="card mb-6">
+      <div class="p-4 border-b border-medical-blue-50 flex flex-wrap items-center justify-between gap-3">
+        <h3 class="font-semibold text-medical-text-primary flex items-center gap-2">
+          <Icon name="trendingUp" size={18} color="#3B82F6" />
+          用药趋势
+        </h3>
+        <div class="flex items-center gap-2">
+          <div class="flex bg-gray-100 rounded-lg p-0.5">
+            {#each PERIOD_OPTIONS as opt}
+              <button
+                class="px-3 py-1 text-xs font-medium rounded-md transition-all {trendPeriod === opt.value ? 'bg-white text-medical-blue-500 shadow-sm' : 'text-medical-text-secondary hover:text-medical-text-primary'}"
+                on:click={() => trendPeriod = opt.value}
+              >
+                {opt.label}
+              </button>
+            {/each}
+          </div>
+          <div class="flex bg-gray-100 rounded-lg p-0.5">
+            {#each DIMENSION_OPTIONS as opt}
+              <button
+                class="px-3 py-1 text-xs font-medium rounded-md transition-all {trendDimension === opt.value ? 'bg-white text-medical-green-500 shadow-sm' : 'text-medical-text-secondary hover:text-medical-text-primary'}"
+                on:click={() => trendDimension = opt.value}
+              >
+                {opt.label}
+              </button>
+            {/each}
+          </div>
+        </div>
+      </div>
+      <div class="p-4">
+        <div style="height: 280px;">
+          <canvas bind:this={trendCanvas}></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div class="card">
+        <div class="p-4 border-b border-medical-blue-50">
+          <h3 class="font-semibold text-medical-text-primary flex items-center gap-2">
+            <Icon name="pill" size={18} color="#10B981" />
+            药品使用排行
+          </h3>
+        </div>
+        <div class="p-4">
+          <div style="height: 320px;">
+            <canvas bind:this={medicineRankCanvas}></canvas>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="p-4 border-b border-medical-blue-50">
+          <h3 class="font-semibold text-medical-text-primary flex items-center gap-2">
+            <Icon name="users" size={18} color="#8B5CF6" />
+            成员用药对比
+          </h3>
+        </div>
+        <div class="p-4">
+          <div style="height: 320px;">
+            <canvas bind:this={memberCompareCanvas}></canvas>
+          </div>
         </div>
       </div>
     </div>

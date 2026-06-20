@@ -83,13 +83,47 @@ sizes.forEach(s => {
   console.log(`Created ${s.name}`)
 })
 
-fs.copyFileSync(
-  path.join(iconsDir, '128x128.png'),
-  path.join(iconsDir, 'icon.ico')
-)
-fs.copyFileSync(
-  path.join(iconsDir, '128x128.png'),
-  path.join(iconsDir, 'icon.icns')
-)
+function createICO(pngBuffers) {
+  const count = pngBuffers.length
+  const headerSize = 6 + 16 * count
+  let offset = headerSize
+  const entries = []
+  const datas = []
+
+  pngBuffers.forEach((png, i) => {
+    const entry = Buffer.alloc(16)
+    const size = png.length
+    const w = i === 2 ? 0 : (i === 1 ? 128 : 32)
+    const h = w
+    entry[0] = w
+    entry[1] = h
+    entry[2] = 0
+    entry[3] = 0
+    entry.writeUInt16LE(1, 4)
+    entry.writeUInt16LE(32, 6)
+    entry.writeUInt32LE(size, 8)
+    entry.writeUInt32LE(offset, 12)
+    entries.push(entry)
+    datas.push(png)
+    offset += size
+  })
+
+  const header = Buffer.alloc(6)
+  header.writeUInt16LE(0, 0)
+  header.writeUInt16LE(1, 2)
+  header.writeUInt16LE(count, 4)
+
+  return Buffer.concat([header, ...entries, ...datas])
+}
+
+const png32 = createPNG(32, 32)
+const png128 = createPNG(128, 128)
+const png256 = createPNG(256, 256)
+const ico = createICO([png32, png128, png256])
+fs.writeFileSync(path.join(iconsDir, 'icon.ico'), ico)
+console.log('Created icon.ico')
+
+fs.writeFileSync(path.join(iconsDir, 'icon.icns'), png128)
+console.log('Created icon.icns')
 
 console.log('All icons generated!')
