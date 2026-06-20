@@ -1,7 +1,7 @@
 import { get } from 'svelte/store'
 import { createPersistentStore } from './storage.js'
-import { generateId, nowISO, getExpiryStatus, getDaysUntilExpiry } from '../utils/helpers.js'
-import { MEDICINE_CATEGORIES, EXPIRY_STATUS } from '../utils/constants.js'
+import { generateId, nowISO, getExpiryStatus, getDaysUntilExpiry, todayISO } from '../utils/helpers.js'
+import { MEDICINE_CATEGORIES, EXPIRY_STATUS, PURCHASE_CHANNELS } from '../utils/constants.js'
 
 const initialMedicines = [
   {
@@ -27,6 +27,10 @@ const initialMedicines = [
     instructionFile: null,
     familyMemberIds: ['me', 'wife'],
     markedExpired: false,
+    unitPrice: 28.5,
+    purchaseDate: '2026-01-15',
+    purchaseChannel: PURCHASE_CHANNELS.HOSPITAL,
+    receiptPhoto: null,
     createdAt: nowISO(),
     updatedAt: nowISO()
   },
@@ -53,6 +57,10 @@ const initialMedicines = [
     instructionFile: null,
     familyMemberIds: ['me', 'wife', 'child'],
     markedExpired: false,
+    unitPrice: 15.8,
+    purchaseDate: '2026-03-20',
+    purchaseChannel: PURCHASE_CHANNELS.PHARMACY,
+    receiptPhoto: null,
     createdAt: nowISO(),
     updatedAt: nowISO()
   },
@@ -64,7 +72,7 @@ const initialMedicines = [
     manufacturer: '云南白药',
     barcode: '6901234567892',
     batchNumber: 'C20250220',
-    expiryDate: '2025-06-20',
+    expiryDate: '2027-06-20',
     location: '卫生间储物柜',
     quantity: 1,
     unit: '盒',
@@ -79,6 +87,10 @@ const initialMedicines = [
     instructionFile: null,
     familyMemberIds: ['me', 'wife', 'child', 'father', 'mother'],
     markedExpired: false,
+    unitPrice: 12.9,
+    purchaseDate: '2026-02-10',
+    purchaseChannel: PURCHASE_CHANNELS.JD,
+    receiptPhoto: null,
     createdAt: nowISO(),
     updatedAt: nowISO()
   }
@@ -169,4 +181,26 @@ export function getMedicinesByLocation(location) {
 
 export function getMedicinesByFamilyMember(memberId) {
   return get(medicines).filter((m) => m.familyMemberIds?.includes(memberId))
+}
+
+export function getMedicinesWithPurchaseInfo() {
+  return get(medicines).filter((m) => m.unitPrice != null && m.purchaseDate)
+}
+
+export function getPurchaseStatsByDateRange(startDate, endDate) {
+  const list = getMedicinesWithPurchaseInfo()
+  return list.filter((m) => {
+    const purchaseDate = new Date(m.purchaseDate)
+    const start = startDate ? new Date(startDate) : new Date('1970-01-01')
+    const end = endDate ? new Date(endDate + 'T23:59:59') : new Date('2099-12-31')
+    return purchaseDate >= start && purchaseDate <= end
+  })
+}
+
+export function getTotalSpending(medicinesList) {
+  return medicinesList.reduce((total, m) => {
+    const price = parseFloat(m.unitPrice) || 0
+    const qty = parseFloat(m.quantity) || 0
+    return total + price * qty
+  }, 0)
 }

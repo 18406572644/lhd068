@@ -20,7 +20,9 @@
     CATEGORY_LABELS,
     STORAGE_LOCATIONS,
     DOSAGE_UNITS,
-    EXPIRY_STATUS
+    EXPIRY_STATUS,
+    PURCHASE_CHANNELS,
+    PURCHASE_CHANNEL_LABELS
   } from '../utils/constants.js'
   import {
     getExpiryStatus,
@@ -28,6 +30,7 @@
     formatDate,
     todayISO
   } from '../utils/helpers.js'
+  import { calculateTotalAmount } from '../utils/statistics.js'
 
   let searchQuery = ''
   let filterStatus = 'all'
@@ -86,7 +89,11 @@
       sideEffects: '',
       notes: '',
       instructionFile: null,
-      familyMemberIds: []
+      familyMemberIds: [],
+      unitPrice: null,
+      purchaseDate: '',
+      purchaseChannel: PURCHASE_CHANNELS.PHARMACY,
+      receiptPhoto: null
     }
   }
 
@@ -306,6 +313,25 @@
       }
       reader.readAsDataURL(file)
     }
+  }
+
+  function handleReceiptUpload(e) {
+    const file = e.target.files[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onload = (ev) => {
+        form.receiptPhoto = {
+          name: file.name,
+          type: file.type,
+          data: ev.target.result
+        }
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  function clearReceipt() {
+    form.receiptPhoto = null
   }
 
   function toggleMember(id) {
@@ -593,6 +619,51 @@
       </div>
     </div>
 
+    <div class="pt-4 border-t border-medical-blue-50">
+      <p class="text-sm font-medium text-medical-text-secondary mb-3">采购信息 <span class="text-xs text-medical-text-tertiary">(非必填)</span></p>
+      <div class="grid grid-cols-2 gap-4">
+        <div>
+          <label class="label-base">单价（元）</label>
+          <input type="number" class="input-base" placeholder="如：28.50" step="0.01" min="0" bind:value={form.unitPrice} />
+        </div>
+        <div>
+          <label class="label-base">购买日期</label>
+          <input type="date" class="input-base" bind:value={form.purchaseDate} />
+        </div>
+        <div class="col-span-2">
+          <label class="label-base">购买渠道</label>
+          <select class="input-base" bind:value={form.purchaseChannel}>
+            {#each Object.values(PURCHASE_CHANNELS) as channel}
+              <option value={channel}>{PURCHASE_CHANNEL_LABELS[channel]}</option>
+            {/each}
+          </select>
+        </div>
+        <div class="col-span-2">
+          <label class="label-base">发票/小票照片</label>
+          <div class="border-2 border-dashed border-medical-blue-100 rounded-lg p-4 text-center hover:border-medical-blue-300 transition-colors cursor-pointer">
+            <input type="file" id="receipt-upload" accept=".jpg,.jpeg,.png,.pdf" class="hidden" on:change={handleReceiptUpload} />
+            {#if form.receiptPhoto}
+              <div class="space-y-2">
+                {#if form.receiptPhoto.type?.startsWith('image/')}
+                  <img src={form.receiptPhoto.data} alt="小票照片" class="max-h-40 mx-auto rounded-lg" />
+                {/if}
+                <div class="flex items-center justify-center gap-2">
+                  <Icon name="file" size={20} color="#3B82F6" />
+                  <span class="text-sm text-medical-blue-500">{form.receiptPhoto.name}</span>
+                </div>
+                <button type="button" class="text-xs text-medical-danger hover:underline" on:click={clearReceipt}>清除</button>
+              </div>
+            {:else}
+              <label for="receipt-upload" class="cursor-pointer block">
+                <Icon name="camera" size={24} color="#9CA3AF" />
+                <p class="text-sm text-medical-text-secondary mt-2">点击上传发票或小票照片</p>
+              </label>
+            {/if}
+          </div>
+        </div>
+      </div>
+    </div>
+
     <div>
       <label class="label-base">备注</label>
       <textarea class="input-base h-20 resize-none" bind:value={form.notes}></textarea>
@@ -785,6 +856,43 @@
             <Icon name="download" size={16} />
             <span class="text-sm">{selectedMedicine.instructionFile.name}</span>
           </a>
+        </div>
+      {/if}
+
+      {#if selectedMedicine.unitPrice != null || selectedMedicine.purchaseDate}
+        <div class="pt-4 border-t border-medical-blue-50">
+          <p class="text-sm font-medium text-medical-text-secondary mb-3">采购信息</p>
+          <div class="grid grid-cols-2 gap-4">
+            <div>
+              <p class="text-xs text-medical-text-tertiary">单价</p>
+              <p class="text-sm text-medical-text-primary mt-0.5">{selectedMedicine.unitPrice != null ? '¥' + parseFloat(selectedMedicine.unitPrice).toFixed(2) : '-'}</p>
+            </div>
+            <div>
+              <p class="text-xs text-medical-text-tertiary">总金额</p>
+              <p class="text-sm font-medium text-medical-green-500 mt-0.5">¥{calculateTotalAmount(selectedMedicine).toFixed(2)}</p>
+            </div>
+            <div>
+              <p class="text-xs text-medical-text-tertiary">购买日期</p>
+              <p class="text-sm text-medical-text-primary mt-0.5">{formatDate(selectedMedicine.purchaseDate)}</p>
+            </div>
+            <div>
+              <p class="text-xs text-medical-text-tertiary">购买渠道</p>
+              <p class="text-sm text-medical-text-primary mt-0.5">{PURCHASE_CHANNEL_LABELS[selectedMedicine.purchaseChannel] || '-'}</p>
+            </div>
+            {#if selectedMedicine.receiptPhoto}
+              <div class="col-span-2">
+                <p class="text-xs text-medical-text-tertiary mb-2">发票/小票</p>
+                {#if selectedMedicine.receiptPhoto.type?.startsWith('image/')}
+                  <img src={selectedMedicine.receiptPhoto.data} alt="小票照片" class="max-h-48 rounded-lg border border-medical-blue-100" />
+                {:else}
+                  <a href={selectedMedicine.receiptPhoto.data} download={selectedMedicine.receiptPhoto.name} class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-medical-blue-50 text-medical-blue-500 hover:bg-medical-blue-100 transition-all">
+                    <Icon name="download" size={16} />
+                    <span class="text-sm">{selectedMedicine.receiptPhoto.name}</span>
+                  </a>
+                {/if}
+              </div>
+            {/if}
+          </div>
         </div>
       {/if}
 

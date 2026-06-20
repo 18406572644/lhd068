@@ -11,6 +11,7 @@
     { id: 'records', label: '用药记录', icon: 'clock' },
     { id: 'family', label: '家庭成员', icon: 'users' },
     { id: 'inventory', label: '库存统计', icon: 'stats' },
+    { id: 'statistics', label: '消费统计', icon: 'trendingUp' },
     { id: 'settings', label: '系统设置', icon: 'settings' }
   ]
 
